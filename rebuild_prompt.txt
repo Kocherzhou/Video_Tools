@@ -1,0 +1,26 @@
+请重建 app.py。这是一个 Flask 后端视频字幕生成工具，约2300行。
+
+步骤：
+1. 先完整阅读 PROJECT_STATUS.md（功能规格）
+2. 再完整阅读 templates/index.html（前端，从中提取所有API端点和参数）
+3. 重建 app.py
+
+技术要求：
+- Flask，端口5000
+- 环境变量：GOOGLE_API_KEY（必须）、FISH_API_KEY（可选）
+- SSE实时推送（Server-Sent Events）
+- job内存存储 + 磁盘JSON缓存（重启恢复）
+
+必须实现的功能：
+1. 字幕生成：上传视频 → Gemini Files API → AI生成中文字幕（模型：gemini-3.1-flash-lite-preview）
+2. TTS配音（5种引擎）：
+   - Gemini TTS（模型：gemini-2.5-flash-preview-tts，声音：Kore/Charon/Fenrir/Puck）
+   - Edge TTS（云端免费，声音：晓晓/晓伊/云希/云健/云扬/晓臻）
+   - Fish Audio（需FISH_API_KEY）
+   - MeloTTS（本地，需CUDA）
+   - Wavenet（Google Cloud）
+3. 字幕烧录：ASS格式，ffmpeg，Noto Sans CJK SC字体，支持GPU加速(h264_nvenc)
+4. Slide配音：PPT/PDF转图片 → Gemini Vision生成讲解词 → TTS合成
+5. 语速预计算：calculate_global_speed()，全局上限1.3x
+
+完成后运行：openclaw system event --text "app.py rebuilt successfully" --mode now

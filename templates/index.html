@@ -1,0 +1,3092 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>视频字幕生成器</title>
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0d0d;
+      --surface:   #161616;
+      --surface2:  #1e1e1e;
+      --surface3:  #252525;
+      --border:    #2a2a2a;
+      --border2:   #333;
+      --text:      #e2e2e2;
+      --muted:     #777;
+      --accent:    #38bdf8;
+      --accent-dk: #0284c7;
+      --success:   #4ade80;
+      --error:     #f87171;
+      --warn-bg:   #1a1200;
+      --warn-bd:   #4d3800;
+      --warn-txt:  #fbbf24;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+                   'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ────────────────────────────────────────────────── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-logo  { font-size: 26px; line-height: 1; }
+    .header-title { font-size: 20px; font-weight: 700; color: #fff; letter-spacing: -.3px; }
+    .header-title span { color: var(--accent); }
+    .header-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Main ──────────────────────────────────────────────────── */
+    .main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+
+    /* ── Alerts ─────────────────────────────────────────────────── */
+    .alerts { margin-bottom: 24px; display: flex; flex-direction: column; gap: 8px; }
+
+    .alert {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+    .alert-warn { background: var(--warn-bg); border: 1px solid var(--warn-bd); color: var(--warn-txt); }
+
+    /* ── Upload Card ────────────────────────────────────────────── */
+    #uploadCard {
+      background: var(--surface);
+      border: 2px dashed var(--border2);
+      border-radius: 18px;
+      padding: 72px 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      outline: none;
+      user-select: none;
+    }
+    #uploadCard:hover, #uploadCard.dragging {
+      border-color: var(--accent);
+      background: #071621;
+    }
+    #uploadCard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .upload-icon  { font-size: 54px; margin-bottom: 18px; line-height: 1; }
+    .upload-title { font-size: 22px; font-weight: 600; color: #fff; margin-bottom: 8px; }
+    .upload-hint  { color: var(--muted); font-size: 14px; }
+    .upload-hint strong { color: var(--accent); }
+
+    .format-pills { display: flex; justify-content: center; gap: 8px; margin-top: 20px; }
+    .pill {
+      background: var(--surface3);
+      border: 1px solid var(--border2);
+      color: var(--muted);
+      padding: 3px 12px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .5px;
+    }
+
+    /* ── Progress Card ──────────────────────────────────────────── */
+    #progressCard {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px 32px;
+    }
+
+    /* Steps — 4 steps */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      position: relative;
+      margin-bottom: 28px;
+    }
+    .steps::before {
+      content: '';
+      position: absolute;
+      top: 17px;
+      left: calc(12.5% + 2px);
+      width: calc(75% - 4px);
+      height: 2px;
+      background: var(--border2);
+    }
+
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+      z-index: 1;
+    }
+    .step-dot {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 2px solid var(--border2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      transition: background .3s, border-color .3s, box-shadow .3s;
+    }
+    .step-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    .step.active  .step-dot  { background: var(--accent); border-color: var(--accent); animation: glow 1.6s ease infinite; }
+    .step.done    .step-dot  { background: var(--accent); border-color: var(--accent); }
+    .step.error   .step-dot  { background: var(--error);  border-color: var(--error);  }
+    .step.active  .step-label,
+    .step.done    .step-label { color: var(--accent); }
+    .step.error   .step-label { color: var(--error); }
+
+    @keyframes glow {
+      0%,100% { box-shadow: 0 0 0 0   rgba(56,189,248,.5); }
+      50%      { box-shadow: 0 0 0 8px rgba(56,189,248,0);  }
+    }
+
+    /* Progress bar */
+    .bar-track {
+      height: 6px;
+      background: var(--surface3);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-dk), var(--accent));
+      border-radius: 3px;
+      transition: width .6s cubic-bezier(.4,0,.2,1);
+      width: 0%;
+    }
+    .progress-msg {
+      text-align: center;
+      color: var(--muted);
+      font-size: 13.5px;
+      min-height: 1.4em;
+    }
+    .progress-msg.error { color: var(--error); }
+
+    /* ── Live Log Box ───────────────────────────────────────────── */
+    #logBox {
+      display: none;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 14px;
+      overflow: hidden;
+    }
+    .log-box-title {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 5px 12px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      letter-spacing: .3px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #logEntries {
+      max-height: 108px;
+      overflow-y: auto;
+      padding: 3px 0;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 11.5px;
+    }
+    #logEntries::-webkit-scrollbar { width: 4px; }
+    #logEntries::-webkit-scrollbar-track { background: transparent; }
+    #logEntries::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+    .log-entry {
+      display: flex;
+      gap: 10px;
+      padding: 3px 12px;
+      line-height: 1.45;
+    }
+    .log-time { color: #3a5a70; white-space: nowrap; flex-shrink: 0; }
+    .log-msg  { color: #7a9fb5; }
+    .log-entry.log-success .log-msg { color: var(--success); }
+    .log-entry.log-error   .log-msg { color: var(--error); }
+
+    /* ── Subtitle Preview ───────────────────────────────────────── */
+    #previewArea {
+      display: none;
+      margin-top: 16px;
+      background: #0a1f13;
+      border: 1px solid #1a4028;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .preview-label {
+      padding: 9px 16px 8px;
+      font-size: 13px;
+      color: var(--success);
+      font-weight: 600;
+      border-bottom: 1px solid #1a4028;
+    }
+    .preview-item {
+      display: grid;
+      grid-template-columns: 58px 1fr 1fr;
+      gap: 10px;
+      padding: 7px 16px;
+      border-bottom: 1px solid #12291a;
+      font-size: 12.5px;
+      align-items: start;
+    }
+    .preview-item:last-child { border-bottom: none; }
+    .preview-time  { color: #5aa6cc; font-family: 'Consolas', monospace; font-size: 11px; padding-top: 1px; }
+    .preview-orig  { color: var(--muted); line-height: 1.4; }
+    .preview-trans { color: var(--text);  line-height: 1.4; }
+
+    /* ── Video Section ──────────────────────────────────────────── */
+    #videoSection { display: none; margin-top: 24px; }
+
+    .video-wrap {
+      position: relative;
+      background: #000;
+      border-radius: 14px;
+      line-height: 0;
+    }
+
+    #videoEl {
+      width: 100%;
+      max-height: 62vh;
+      display: block;
+      border-radius: 14px;
+    }
+
+    /* ── Subtitle Box ────────────────────────────────────────────── */
+    #subtitleBox {
+      position: absolute;
+      bottom: 5%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      min-width: 80px;
+      background: transparent;
+      padding: 6px 10px;
+      cursor: move;
+      user-select: none;
+      touch-action: none;
+      border: 1px solid transparent;
+      transition: border-color .2s;
+      visibility: hidden;
+    }
+    #subtitleBox:hover { border-color: rgba(56,189,248,.18); }
+
+    /* Alignment presets — override base position */
+    #subtitleBox[data-preset="tl"] { left:5%;  top:10%; right:auto; bottom:auto; transform:none; }
+    #subtitleBox[data-preset="tr"] { right:5%; top:10%; left:auto;  bottom:auto; transform:none; }
+    #subtitleBox[data-preset="mc"] { left:50%; top:50%; right:auto; bottom:auto; transform:translate(-50%,-50%); }
+    #subtitleBox[data-preset="bl"] { left:5%;  bottom:10%; right:auto; top:auto; transform:none; }
+    #subtitleBox[data-preset="br"] { right:5%; bottom:10%; left:auto;  top:auto; transform:none; }
+
+    #subtitleText {
+      font-size: 20px;
+      color: #FFE600;
+      text-align: center;
+      line-height: 1.55;
+      text-shadow:
+        -2px -2px 0 #000,
+         0   -2px 0 #000,
+         2px -2px 0 #000,
+        -2px  0   0 #000,
+         2px  0   0 #000,
+        -2px  2px 0 #000,
+         0    2px 0 #000,
+         2px  2px 0 #000;
+      word-break: break-word;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      min-height: 1.55em;
+      pointer-events: none;
+    }
+
+    /* Resize handle – bottom-right corner */
+    #resizeHandle {
+      position: absolute;
+      right: -4px;
+      bottom: -4px;
+      width: 32px;
+      height: 32px;
+      cursor: nwse-resize;
+      z-index: 5;
+    }
+    #resizeHandle::after {
+      content: '';
+      position: absolute;
+      right: 6px;
+      bottom: 6px;
+      width: 14px;
+      height: 14px;
+      border-right: 2.5px solid rgba(56,189,248,.8);
+      border-bottom: 2.5px solid rgba(56,189,248,.8);
+      border-radius: 1px;
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────────────── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      /* 多留一点上间距：放大字幕时 #subtitleBox 贴着视频底边，
+         按钮区下移避免被字幕浮层盖住。 */
+      margin-top: 40px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 20px;
+      border-radius: 9px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background .15s, transform .1s;
+      line-height: 1;
+      text-decoration: none;
+    }
+    .btn:active { transform: scale(.97); }
+
+    .btn-accent { background: var(--accent); color: #000; }
+    .btn-accent:hover { background: #7dd3fc; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border2);
+    }
+    .btn-ghost:hover { background: var(--surface3); color: var(--text); }
+
+    .btn-success {
+      background: transparent;
+      color: var(--success);
+      border: 1px solid #1f5c33;
+    }
+    .btn-success:hover { background: #0d2318; color: var(--success); }
+
+    .toolbar-hint { font-size: 12px; color: #444; margin-left: auto; }
+
+    /* ── Tab Navigation ─────────────────────────────────────────── */
+    .tab-nav {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0;
+    }
+    .tab-btn {
+      padding: 10px 22px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color .15s, border-color .15s;
+      border-radius: 0;
+    }
+    .tab-btn:hover  { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── MTV Section ─────────────────────────────────────────────── */
+    .mtv-section {
+      margin-bottom: 22px;
+    }
+    .mtv-section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 10px;
+    }
+
+    .mtv-drop {
+      background: var(--surface);
+      border: 2px dashed var(--border2);
+      border-radius: 14px;
+      padding: 28px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      outline: none;
+      user-select: none;
+    }
+    .mtv-drop:hover, .mtv-drop.dragging {
+      border-color: var(--accent);
+      background: #071621;
+    }
+    .mtv-drop-icon  { font-size: 32px; margin-bottom: 8px; line-height: 1; }
+    .mtv-drop-title { font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+    .mtv-drop-hint  { font-size: 12.5px; color: var(--muted); }
+    .mtv-drop-hint strong { color: var(--accent); }
+
+    /* MTV File list */
+    .mtv-file-list {
+      margin-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .mtv-file-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: 13px;
+    }
+    .mtv-file-type {
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .mtv-file-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+    .mtv-file-badge {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 100px;
+      font-weight: 600;
+      letter-spacing: .3px;
+      flex-shrink: 0;
+    }
+    .badge-video  { background: #1a2c3d; color: #38bdf8; }
+    .badge-image  { background: #1a2d1a; color: #4ade80; }
+    .badge-pdf    { background: #2d1a1a; color: #f87171; }
+    .mtv-file-rm  {
+      flex-shrink: 0;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 0 2px;
+      transition: color .15s;
+    }
+    .mtv-file-rm:hover { color: var(--error); }
+
+    /* MTV Music selected */
+    .mtv-music-sel {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .mtv-music-icon { font-size: 20px; flex-shrink: 0; }
+    .mtv-music-info { flex: 1; overflow: hidden; }
+    .mtv-music-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mtv-music-meta { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+
+    /* MTV Options grid */
+    .mtv-opts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 560px) { .mtv-opts { grid-template-columns: 1fr; } }
+    .mtv-opt-group {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .mtv-opt-label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 10px;
+      letter-spacing: .3px;
+    }
+    .mtv-radios {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .mtv-radio-btn {
+      padding: 5px 14px;
+      border-radius: 7px;
+      border: 1px solid var(--border2);
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .mtv-radio-btn:hover  { background: var(--surface3); color: var(--text); }
+    .mtv-radio-btn.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+
+    /* MTV progress steps */
+    .mtv-steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      position: relative;
+      margin-bottom: 22px;
+    }
+    .mtv-steps::before {
+      content: '';
+      position: absolute;
+      top: 17px;
+      left: calc(12.5% + 2px);
+      width: calc(75% - 4px);
+      height: 2px;
+      background: var(--border2);
+    }
+
+    /* Subtitle model-fallback warning (sticky) */
+    #modelWarning {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-bd);
+      color: var(--warn-txt);
+      border-radius: 9px;
+      padding: 10px 14px;
+      font-size: 12.5px;
+      margin: 12px 0;
+      line-height: 1.5;
+    }
+
+    /* MTV warn banner */
+    .mtv-warn {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-bd);
+      color: var(--warn-txt);
+      border-radius: 9px;
+      padding: 10px 14px;
+      font-size: 12.5px;
+      margin-bottom: 14px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    /* ── Align Bar ───────────────────────────────────────────────── */
+    .align-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .align-bar-label { font-size: 12px; color: var(--muted); margin-right: 2px; flex-shrink: 0; }
+    .preset-btn {
+      padding: 4px 12px;
+      border-radius: 7px;
+      border: 1px solid var(--border2);
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .preset-btn:hover { background: var(--surface3); color: var(--text); }
+    .preset-btn.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+
+    /* ── Subtitle Style Panel ──────────────────────────────────── */
+    #subStylePanel {
+      display: none;
+      margin-top: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+    }
+    .style-panel-body {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .style-controls { flex: 1; min-width: 0; }
+    .style-preview-wrap {
+      flex: 0 0 260px;
+      background: #111;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    #ssPreviewText {
+      padding: 16px;
+      font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .style-panel-title {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .style-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .style-row:last-child { margin-bottom: 0; }
+    .style-label {
+      font-size: 12px;
+      color: var(--muted);
+      min-width: 80px;
+      flex-shrink: 0;
+    }
+    .style-input {
+      background: var(--surface3);
+      color: var(--text);
+      border: 1px solid var(--border2);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      width: 70px;
+    }
+    .style-input[type="color"] {
+      width: 36px;
+      height: 28px;
+      padding: 2px;
+      cursor: pointer;
+    }
+    .style-val { font-size: 11px; color: var(--muted); min-width: 30px; }
+
+    /* ── History Modal ──────────────────────────────────────────── */
+    #historyOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.6);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    #historyOverlay.open { display: flex; }
+    .history-modal {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      width: 520px;
+      max-width: 92vw;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .history-header h3 { font-size: 15px; font-weight: 600; color: #fff; margin: 0; }
+    .history-close {
+      background: none; border: none; color: var(--muted); font-size: 20px;
+      cursor: pointer; padding: 0 4px; line-height: 1;
+    }
+    .history-close:hover { color: var(--text); }
+    .history-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+    .history-empty {
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 32px 16px;
+    }
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-item:hover { background: var(--surface2); }
+    .history-info { flex: 1; min-width: 0; }
+    .history-name {
+      font-size: 13px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .history-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .src-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; padding: 1px 6px; border-radius: 3px;
+      margin-left: 6px; font-weight: 500; line-height: 1.5;
+      vertical-align: middle;
+    }
+    .src-badge.whisper { background: rgba(34,197,94,.15); color: #4ade80; }
+    .src-badge.gemini  { background: rgba(56,189,248,.15); color: #38bdf8; }
+    .history-del {
+      background: none; border: none; color: var(--muted); font-size: 16px;
+      cursor: pointer; padding: 4px 6px; border-radius: 4px; flex-shrink: 0;
+    }
+    .history-del:hover { color: var(--error); background: rgba(248,113,113,.1); }
+    .history-slide {
+      background: none; border: none; color: var(--accent); font-size: 12px;
+      cursor: pointer; padding: 4px 8px; border-radius: 4px; flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .history-slide:hover { background: rgba(56,189,248,.1); }
+
+    /* ── Slide Dub Modal ───────────────────────────────────────── */
+    #slideOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.6);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    #slideOverlay.open { display: flex; }
+    .slide-modal {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      width: 460px;
+      max-width: 92vw;
+      padding: 24px;
+    }
+    .slide-modal h3 { font-size: 16px; font-weight: 600; color: #fff; margin: 0 0 16px; }
+    .slide-row { margin-bottom: 12px; }
+    .slide-row label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    .slide-progress {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .slide-progress.error { color: var(--error); }
+    .slide-progress.done  { color: var(--success); }
+    .slide-dl-btn {
+      padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer;
+      background: var(--accent); color: #fff; font-size: 14px;
+    }
+    .slide-dl-btn:hover { opacity: .85; }
+
+    /* ── Dub Status Bar ──────────────────────────────────────────── */
+    #dubStatus {
+      margin-top: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px 10px;
+    }
+    .dub-status-msg { font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+    .dub-status-msg.error { color: var(--error); }
+
+    /* ── Subtitle List ──────────────────────────────────────────── */
+    #subtitleList {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-top: 8px;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    #subtitleList::-webkit-scrollbar { width: 5px; }
+    #subtitleList::-webkit-scrollbar-track { background: transparent; }
+    #subtitleList::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    .sub-item {
+      display: grid;
+      grid-template-columns: 80px 1fr 1fr 26px;
+      gap: 12px;
+      padding: 9px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .1s;
+      align-items: center;
+    }
+    .sub-del {
+      background: transparent; border: none; color: var(--muted);
+      font-size: 14px; line-height: 1; cursor: pointer; padding: 4px;
+      border-radius: 5px; opacity: .5; transition: opacity .1s, color .1s, background .1s;
+    }
+    .sub-item:hover .sub-del { opacity: 1; }
+    .sub-del:hover { color: #ff6b6b; background: rgba(255,107,107,.12); }
+    .sub-item:last-child { border-bottom: none; }
+    .sub-item:hover { background: var(--surface2); }
+    .sub-item.active { background: #071621; }
+
+    .sub-time  { color: #5aa6cc; font-family: 'Consolas', monospace; font-size: 11.5px; white-space: nowrap; cursor: pointer; }
+    .sub-orig  { color: var(--muted); line-height: 1.4; cursor: pointer; }
+    .sub-trans { color: var(--text);  line-height: 1.4; border-radius: 5px; padding: 2px 5px; outline: none; cursor: text; transition: background .1s, box-shadow .1s; }
+    .sub-trans:hover  { background: rgba(255,255,255,.05); }
+    .sub-trans:focus  { background: rgba(56,189,248,.12); box-shadow: 0 0 0 1px var(--border2); }
+
+    /* ── Subtitle edit toolbar */
+    .subs-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; margin-top: 16px;
+    }
+    .subs-toolbar-hint { font-size: 12.5px; color: var(--muted); }
+    .subs-toolbar-btns { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+    .trim-opt { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+    .trim-opt input[type="number"] { width: 42px; background: var(--surface2); color: var(--text); border: 1px solid var(--border2); border-radius: 5px; padding: 3px 5px; font-size: 12px; }
+    .shift-group { display: inline-flex; gap: 4px; }
+    .btn-shift {
+      background: var(--surface2); color: var(--muted);
+      border: 1px solid var(--border2); border-radius: 7px;
+      padding: 6px 10px; font-size: 12px; cursor: pointer; white-space: nowrap;
+      transition: background .12s, color .12s;
+    }
+    .btn-shift:hover { background: #134b66; color: var(--text); }
+    .btn-import-srt {
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border2); border-radius: 7px;
+      padding: 6px 16px; font-size: 13px; cursor: pointer; white-space: nowrap;
+      transition: background .12s;
+    }
+    .btn-import-srt:hover { background: #134b66; }
+    .btn-save-subs {
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border2); border-radius: 7px;
+      padding: 6px 16px; font-size: 13px; cursor: pointer; white-space: nowrap;
+      transition: background .12s, opacity .12s;
+    }
+    .btn-save-subs:hover:not(:disabled) { background: #134b66; }
+    .btn-save-subs:disabled { opacity: .45; cursor: default; }
+    .btn-save-subs.dirty { background: #1d6a3a; border-color: #2a8f50; color: #eaffef; }
+
+    /* ── Resume Banner ───────────────────────────────────────────── */
+    #resumeBanner {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 14px 20px;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    #resumeBanner .resume-icon  { font-size: 22px; line-height: 1; }
+    #resumeBanner .resume-info  { flex: 1; min-width: 140px; }
+    #resumeBanner .resume-title { font-size: 14px; font-weight: 600; color: #fff; }
+    #resumeBanner .resume-sub   { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    #reprocessWrap { text-align: center; margin-top: 14px; }
+  </style>
+</head>
+<body>
+
+<!-- ── GPU thermal badge (polls /api/gpu/status) ──────────────── -->
+<style>
+  #gpuBadge{position:fixed;right:14px;bottom:14px;z-index:9999;display:none;
+    align-items:center;gap:7px;padding:6px 11px;border-radius:999px;
+    font:600 12.5px/1 system-ui,sans-serif;color:#fff;
+    background:#3a3f4b;box-shadow:0 2px 10px rgba(0,0,0,.25);
+    user-select:none;transition:background .4s ease;}
+  #gpuBadge .dot{width:8px;height:8px;border-radius:50%;background:#fff;opacity:.85;}
+  #gpuBadge.crit{animation:gpuPulse .8s ease-in-out infinite;}
+  @keyframes gpuPulse{50%{opacity:.55;}}
+</style>
+<div id="gpuBadge" title="RTX 3080 温度防护罩">
+  <span class="dot"></span><span id="gpuBadgeText">GPU --°C</span>
+</div>
+
+<!-- ── Header ─────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-logo">🎬</div>
+  <div style="flex:1">
+    <div class="header-title">视频<span>字幕</span>生成器</div>
+    <div class="header-sub">英文视频 → AI 字幕 · 配音 · MTV</div>
+  </div>
+  <button class="btn btn-ghost" onclick="toggleHistory()" style="font-size:13px; padding:6px 14px;">🕐 历史</button>
+</header>
+
+<!-- History Modal -->
+<div id="historyOverlay" onclick="if(event.target===this)closeHistory()">
+  <div class="history-modal">
+    <div class="history-header">
+      <h3>处理历史</h3>
+      <button class="history-close" onclick="closeHistory()">&times;</button>
+    </div>
+    <div class="history-list" id="historyList"></div>
+  </div>
+</div>
+
+<!-- Slide Dub Modal -->
+<div id="slideOverlay" onclick="if(event.target===this)closeSlideModal()">
+  <div class="slide-modal">
+    <h3>📎 Slide Deck 配音</h3>
+    <div class="slide-row">
+      <label>上传 PPT / PDF 文件</label>
+      <input type="file" id="slideFileInput" accept=".pptx,.ppt,.pdf,.key"
+             style="font-size:13px; color:var(--text);">
+    </div>
+    <div class="slide-row">
+      <label>配音声音</label>
+      <select id="slideVoice" style="background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:7px; padding:6px 10px; font-size:13px; width:100%;" onchange="(function(){var v=document.getElementById('slideVoice').value;document.getElementById('geminiTtsModelRow').style.display=v.startsWith('gemini_')?'':'none';})()">
+        <option value="openai_nova">🟢 OpenAI Nova (温柔女声)</option>
+        <option value="openai_alloy">🟢 OpenAI Alloy (中性)</option>
+        <option value="openai_onyx">🟢 OpenAI Onyx (低沉男声)</option>
+        <option value="openai_shimmer">🟢 OpenAI Shimmer (明亮女声)</option>
+        <option value="openai_echo">🟢 OpenAI Echo (男声)</option>
+        <option value="openai_fable">🟢 OpenAI Fable (叙事)</option>
+        <option value="gemini_charon">✨ Gemini男声 Charon</option>
+        <option value="gemini_kore">✨ Gemini女声 Kore</option>
+        <option value="gemini_fenrir">✨ Gemini男声 Fenrir</option>
+        <option value="gemini_puck">✨ Gemini男声 Puck</option>
+        <option value="gemini_aoede">⚡ Gemini女声 Aoede (3.1新)</option>
+        <option value="gemini_leda">⚡ Gemini女声 Leda (3.1新)</option>
+        <option value="gemini_orus">⚡ Gemini男声 Orus (3.1新)</option>
+        <option value="gemini_zephyr">⚡ Gemini男声 Zephyr (3.1新)</option>
+        <option value="edge_yunjian" selected>🔵 云健 (成熟男声)</option>
+        <option value="edge_yuyang">🔵 云扬 (新闻男声)</option>
+        <option value="edge_xiaoxiao">🔵 晓晓 (温柔女声)</option>
+        <option value="edge_yunxi">🔵 云希 (年轻男声)</option>
+      </select>
+    </div>
+    <div class="slide-row" id="geminiTtsModelRow" style="display:none">
+      <label>TTS模型</label>
+      <select id="geminiTtsModel" style="background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:7px; padding:6px 10px; font-size:13px; width:100%;">
+        <option value="gemini-3.1-flash-live-preview-tts" selected>⚡ Gemini 3.1 Flash Live TTS（低延迟·新）</option>
+        <option value="gemini-2.5-pro-preview-tts">✨ Gemini 2.5 Pro TTS（高质量）</option>
+        <option value="gemini-2.5-flash-preview-tts">🚀 Gemini 2.5 Flash TTS（快速）</option>
+      </select>
+    </div>
+    <div class="slide-row" style="display:flex; align-items:center; gap:8px;">
+      <input type="checkbox" id="slideBurnSubs" checked style="width:16px; height:16px;"
+             onchange="document.getElementById('slideSubStyle').style.display=this.checked?'':'none'">
+      <label for="slideBurnSubs" style="margin:0; cursor:pointer;">在视频上烧录字幕（每页旁白）</label>
+    </div>
+    <div class="slide-row" id="slideSubStyle" style="display:flex; gap:8px;">
+      <div style="flex:1">
+        <label>字号</label>
+        <select id="slideSubSize" style="background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:7px; padding:6px 8px; font-size:13px; width:100%;">
+          <option value="0.035">小</option>
+          <option value="0.045" selected>中</option>
+          <option value="0.06">大</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label>颜色</label>
+        <select id="slideSubColor" style="background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:7px; padding:6px 8px; font-size:13px; width:100%;">
+          <option value="&amp;H0000FFFF" selected>黄</option>
+          <option value="&amp;H00FFFFFF">白</option>
+          <option value="&amp;H00FFFF00">青</option>
+          <option value="&amp;H0000FF00">绿</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label>位置</label>
+        <select id="slideSubPos" style="background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:7px; padding:6px 8px; font-size:13px; width:100%;">
+          <option value="bottom" selected>底部</option>
+          <option value="top">顶部</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn btn-accent" id="slideStartBtn" onclick="startSlideDub()" style="width:100%">开始生成配音</button>
+    <div class="slide-progress" id="slideProgress" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ── Main ───────────────────────────────────────────────────── -->
+<main class="main">
+
+  <!-- Tab navigation -->
+  <div class="tab-nav">
+    <button class="tab-btn active" id="tabBtnSubtitle" onclick="switchTab('subtitle')">🎬 字幕生成</button>
+    <button class="tab-btn"        id="tabBtnMtv"      onclick="switchTab('mtv')">🎵 MTV 生成器</button>
+    <button class="tab-btn"        id="tabBtnKaraoke"  onclick="location.href='/karaoke'" title="逐字强制对齐卡拉OK字幕（独立页面）">🎤 卡拉OK字幕</button>
+  </div>
+
+  <!-- ══ SUBTITLE TAB ════════════════════════════════════════════ -->
+  <div id="tabSubtitle">
+
+  <!-- Alerts -->
+  <div class="alerts" id="alerts"></div>
+
+  <!-- Resume last job -->
+  <div id="resumeBanner" style="display:none">
+    <div class="resume-icon">🕐</div>
+    <div class="resume-info">
+      <div class="resume-title">发现上次任务记录</div>
+      <div class="resume-sub" id="resumeSubtext"></div>
+    </div>
+    <button class="btn btn-accent" onclick="resumeLastJob()">继续上次任务</button>
+    <button class="btn btn-ghost"  onclick="dismissResume()">忽略</button>
+  </div>
+
+  <!-- Upload -->
+  <div id="uploadCard" tabindex="0" role="button" aria-label="点击或拖拽视频文件到此处">
+    <div class="upload-icon">🎥</div>
+    <div class="upload-title">拖拽视频文件到此处</div>
+    <p class="upload-hint">或 <strong>点击选择文件</strong></p>
+    <div class="format-pills">
+      <span class="pill">MP4</span>
+      <span class="pill">MOV</span>
+      <span class="pill">AVI</span>
+      <span class="pill">MKV</span>
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept=".mp4,.mov,.avi,.mkv" style="display:none" />
+
+  <!-- Standalone Slide配音 entry -->
+  <div style="text-align:center; margin: -4px 0 10px;">
+    <button onclick="openSlideModal(null)" style="background:var(--surface2); color:var(--accent); border:1px solid var(--accent); border-radius:8px; padding:8px 20px; font-size:14px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+      📎 Slide配音 <span style="font-size:11px; color:var(--muted);">（无需上传视频）</span>
+    </button>
+  </div>
+
+  <!-- AI Model Selector -->
+  <div id="aiModelBar" style="display:flex; justify-content:center; gap:8px; margin:-8px 0 12px;">
+    <label style="font-size:13px; color:var(--muted); line-height:32px;" title="Whisper 本地转录后，此模型仅负责中文翻译">字幕AI：</label>
+    <select id="aiModelSelect" style="background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:7px; padding:4px 10px; font-size:13px;">
+      <option value="gemini-3.5-flash" selected>🆕 Gemini 3.5 Flash（默认·云端·快·不占GPU）</option>
+      <option value="gemini-3.1-flash-lite">⚡ Gemini 3.1 Flash Lite（旧默认·更宽免费配额）</option>
+      <option value="gemini-2.5-flash">✨ Gemini 2.5 Flash（备选）</option>
+      <option value="gemini-3.1-pro">🚀 Gemini 3.1 Pro（需付费）</option>
+      <option value="gemini">Gemini Flash Lite（旧版兼容）</option>
+      <option value="openai" data-key="openai">🟢 OpenAI GPT-4o</option>
+      <option value="claude" data-key="claude">🟣 Claude Sonnet</option>
+      <option value="qwen-vl" data-key="qwen_vl">🔶 通义千问 Qwen-VL</option>
+      <option value="glm-4v" data-key="glm">🔷 智谱 GLM-4V</option>
+      <option value="ollama-gemma4">🖥️ 本地 Gemma4 12B（Ollama·离线免费·慢·兜底用）</option>
+    </select>
+    <label style="font-size:13px; color:var(--muted); line-height:32px; display:flex; align-items:center; gap:5px; cursor:pointer;"
+           title="勾选后：上传中文（或任意语言）视频，直接识别原文并烧录字幕，不做翻译；忽略上面的翻译模型。">
+      <input type="checkbox" id="transcribeOnly" style="cursor:pointer;"
+             onchange="document.getElementById('transcribeEngine').style.display=this.checked?'':'none'">
+      中文原文模式（识别不翻译）
+    </label>
+    <select id="transcribeEngine" title="识别引擎：Gemini 文本准但时间近似且耗配额；本地 Whisper 时间 VAD 精确、免配额但文本略逊；混合=Whisper 精确时间轴 + Gemini 听音频校正文本（最准，耗少量配额、稍慢）"
+            style="display:none; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:7px; padding:4px 10px; font-size:13px;">
+      <option value="gemini" selected>☁ Gemini（文本最准）</option>
+      <option value="whisper">🎯 本地Whisper（时间最准·免配额）</option>
+      <option value="hybrid">⭐ 混合（时间精确＋文本最准·最牛）</option>
+    </select>
+  </div>
+
+  <!-- Progress -->
+  <div id="progressCard">
+    <div class="steps">
+      <div class="step" id="s-upload">
+        <div class="step-dot">⬆</div>
+        <div class="step-label">上传文件</div>
+      </div>
+      <div class="step" id="s-gemini">
+        <div class="step-dot">☁</div>
+        <div class="step-label" id="s-gemini-label">字幕识别</div>
+      </div>
+      <div class="step" id="s-generate">
+        <div class="step-dot">✦</div>
+        <div class="step-label">AI 生成字幕</div>
+      </div>
+      <div class="step" id="s-done">
+        <div class="step-dot">✓</div>
+        <div class="step-label">完成</div>
+      </div>
+    </div>
+    <div class="bar-track">
+      <div class="bar-fill" id="barFill"></div>
+    </div>
+    <div class="progress-msg" id="progressMsg">准备中...</div>
+
+    <!-- Sticky warning: shown when translation fell back off the chosen model -->
+    <div id="modelWarning" style="display:none"></div>
+
+    <!-- Live log window -->
+    <div id="logBox">
+      <div class="log-box-title">&#x25BA; 实时日志</div>
+      <div id="logEntries"></div>
+    </div>
+
+    <!-- Subtitle preview (shown immediately on complete) -->
+    <div id="previewArea">
+      <div class="preview-label" id="previewLabel"></div>
+      <div id="previewItems"></div>
+    </div>
+  </div>
+
+  <!-- Reprocess entry point (shown on error when videoSection is hidden) -->
+  <div id="reprocessWrap" style="display:none">
+    <button class="btn btn-ghost" onclick="reprocess()">&#x21BA; 重新处理</button>
+  </div>
+
+  <!-- Video + Subtitles -->
+  <div id="videoSection">
+    <div class="video-wrap" id="videoWrap">
+      <video id="videoEl" controls>您的浏览器不支持视频播放。</video>
+
+      <!-- Subtitle overlay (draggable + resizable) -->
+      <div id="subtitleBox">
+        <div id="subtitleText"></div>
+        <div id="resizeHandle"></div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn btn-accent" id="exportBtn" onclick="exportSRT()">&#x1F4C4; 导出 SRT 字幕</button>
+      <button class="btn btn-ghost" id="downloadOrigBtn" onclick="downloadOrig()">&#x2B07; 下载原始视频</button>
+      <button class="btn btn-success" id="downloadBurnBtn" style="display:none" onclick="downloadBurned()">&#x1F3AC; 下载字幕视频</button>
+      <button class="btn btn-ghost" id="dubBtn" style="display:none" onclick="startDubbing()">&#x1F3A4; 生成中文配音</button>
+      <select id="dubVoice" style="display:none; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:7px; padding:6px 10px; font-size:13px; cursor:pointer;">
+        <option value="zh_female">🇨🇳 中文女声</option>
+        <option value="zh_male">🇨🇳 中文男声</option>
+        <option value="zh_en_mix">🇨🇳 中英混合</option>
+        <option value="en_female">🇺🇸 英文女声</option>
+        <option value="en_male">🇬🇧 英式男声</option>
+        <option value="wavenet_f">☁️ Wavenet女声（云端）</option>
+        <option value="wavenet_m">☁️ Wavenet男声（云端）</option>
+        <option value="edge_xiaoxiao">🔵 晓晓 (温柔女声)</option>
+        <option value="edge_xiaoyi">🔵 晓伊 (活泼女声)</option>
+        <option value="edge_yunxi">🔵 云希 (年轻男声)</option>
+        <option value="edge_yunjian" selected>🔵 云健 (成熟男声·推荐免费)</option>
+        <option value="edge_yuyang">🔵 云扬 (新闻男声)</option>
+        <option value="edge_tw">🔵 晓臻 (台湾女声)</option>
+        <option value="fish_1633917557">🐟 Fish成熟男声</option>
+        <option value="openai_nova">🟢 OpenAI Nova (温柔女声)</option>
+        <option value="openai_alloy">🟢 OpenAI Alloy (中性)</option>
+        <option value="openai_onyx">🟢 OpenAI Onyx (低沉男声)</option>
+        <option value="openai_shimmer">🟢 OpenAI Shimmer (明亮女声)</option>
+        <option value="openai_echo">🟢 OpenAI Echo (男声)</option>
+        <option value="openai_fable">🟢 OpenAI Fable (叙事)</option>
+        <option value="gemini_kore">✨ Gemini女声 Kore</option>
+        <option value="gemini_charon">✨ Gemini男声 Charon</option>
+        <option value="gemini_fenrir">✨ Gemini男声 Fenrir</option>
+        <option value="gemini_puck">✨ Gemini男声 Puck</option>
+        <option value="gemini_aoede">⚡ Gemini女声 Aoede (3.1新)</option>
+        <option value="gemini_leda">⚡ Gemini女声 Leda (3.1新)</option>
+        <option value="gemini_orus">⚡ Gemini男声 Orus (3.1新)</option>
+        <option value="gemini_zephyr">⚡ Gemini男声 Zephyr (3.1新)</option>
+      </select>
+      <select id="dubTtsModel" style="display:none; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:7px; padding:6px 10px; font-size:13px; cursor:pointer;" title="Gemini TTS 模型">
+        <option value="gemini-3.1-flash-live-preview-tts" selected>⚡ 3.1 Flash Live（低延迟）</option>
+        <option value="gemini-2.5-pro-preview-tts">✨ 2.5 Pro（高质量）</option>
+        <option value="gemini-2.5-flash-preview-tts">🚀 2.5 Flash（快速）</option>
+      </select>
+      <button class="btn btn-ghost" id="dubDownloadBtn" style="display:none" onclick="downloadDub()">&#x2B07; 下载配音视频</button>
+      <button class="btn btn-success" id="dubBurnBtn" style="display:none" onclick="downloadDubBurned()">&#x1F3AC; 下载字幕+配音视频</button>
+      <span id="dubBurnStatus" style="display:none; font-size:12px; color:var(--muted); margin-left:4px;"></span>
+      <button class="btn btn-ghost" id="slideDubToolBtn" style="display:none" onclick="openCurrentSlideModal()">&#x1F4CE; Slide配音</button>
+      <button class="btn btn-ghost" id="reprocessBtn" style="display:none" onclick="reprocess()">&#x21BA; 重新处理 视频</button>
+      <button class="btn btn-ghost" id="reprocessSlideBtn" style="display:none" onclick="reprocessSlide()">&#x21BA; 重新处理 Slide</button>
+      <button class="btn btn-ghost" onclick="newVideo()">&#x21BA; 处理新视频</button>
+      <span class="toolbar-hint">拖动字幕框调整位置 · 拖拽右下角调整字号</span>
+    </div>
+
+    <div id="dubStatus" style="display:none">
+      <div class="dub-status-msg" id="dubMsg">准备中...</div>
+      <div class="bar-track" style="height:4px;">
+        <div class="bar-fill" id="dubBarFill" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div id="alignBar" class="align-bar" style="display:none">
+      <span class="align-bar-label">字幕位置：</span>
+      <button class="preset-btn" data-preset="tl" onclick="applyPreset('tl')">左上</button>
+      <button class="preset-btn" data-preset="tr" onclick="applyPreset('tr')">右上</button>
+      <button class="preset-btn" data-preset="mc" onclick="applyPreset('mc')">居中</button>
+      <button class="preset-btn" data-preset="bl" onclick="applyPreset('bl')">左下</button>
+      <button class="preset-btn" data-preset="br" onclick="applyPreset('br')">右下</button>
+    </div>
+
+    <div id="subStylePanel">
+      <div class="style-panel-title">字幕样式设置</div>
+      <div class="style-panel-body">
+        <div class="style-controls">
+          <div class="style-row">
+            <span class="style-label">字体大小</span>
+            <input type="range" id="ssFontSize" min="16" max="80" value="38" class="style-input" style="width:120px" oninput="updateStylePreview()">
+            <span class="style-val" id="ssFontSizeVal">38px</span>
+          </div>
+          <div class="style-row">
+            <span class="style-label">每行字数</span>
+            <input type="number" id="ssMaxChars" min="8" max="72" value="36" class="style-input" oninput="updateStylePreview()">
+          </div>
+          <div class="style-row">
+            <span class="style-label">描边粗细</span>
+            <input type="range" id="ssOutline" min="0" max="6" step="0.5" value="3" class="style-input" style="width:120px" oninput="updateStylePreview()">
+            <span class="style-val" id="ssOutlineVal">3</span>
+          </div>
+          <div class="style-row">
+            <span class="style-label">字幕颜色</span>
+            <input type="color" id="ssColor" value="#FFFF00" class="style-input" oninput="updateStylePreview()">
+            <span class="style-val" id="ssColorName">黄色</span>
+          </div>
+        </div>
+        <div class="style-preview-wrap">
+          <div id="ssPreviewText">这是字幕效果示例</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="subs-toolbar">
+      <span class="subs-toolbar-hint">💡 可直接点译文修改、点 ✕ 删除整条；也可导入外部编辑好的 SRT</span>
+      <div class="subs-toolbar-btns">
+        <label class="trim-opt" title="下载字幕视频时裁掉结尾的广告尾页（如 NotebookLM 末页）">
+          <input type="checkbox" id="trimEndAd"> 裁结尾
+          <input type="number" id="trimEndSec" value="3" min="0" max="120"> 秒
+        </label>
+        <span class="shift-group" title="字幕整体时间微调（预览实时生效，保存后烧录/导出同步）">
+          <button class="btn-shift" onclick="shiftSubs(-0.5)">⏪ 提前0.5s</button>
+          <button class="btn-shift" onclick="shiftSubs(0.5)">延后0.5s ⏩</button>
+        </span>
+        <input type="file" id="importSrtInput" accept=".srt,text/plain" style="display:none" onchange="importSRT(this)">
+        <button class="btn-import-srt" onclick="document.getElementById('importSrtInput').click()">导入SRT</button>
+        <button id="saveSubsBtn" class="btn-save-subs" onclick="saveSubtitles()" disabled>保存修改</button>
+      </div>
+    </div>
+    <div id="subtitleList"></div>
+  </div>
+
+  </div><!-- #tabSubtitle -->
+
+  <!-- ══ MTV TAB ════════════════════════════════════════════════ -->
+  <div id="tabMtv" style="display:none">
+
+    <div id="mtvAlerts"></div>
+
+    <!-- 1. Visual sources -->
+    <div class="mtv-section">
+      <div class="mtv-section-title">1. 视觉素材</div>
+      <div id="mtvVisualDrop" class="mtv-drop" tabindex="0" role="button">
+        <div class="mtv-drop-icon">🖼</div>
+        <div class="mtv-drop-title">拖拽或点击上传视觉素材</div>
+        <div class="mtv-drop-hint">支持 <strong>MP4 视频 / PDF 文档 / 图片</strong>（可多选，按顺序循环）</div>
+      </div>
+      <input type="file" id="mtvVisualInput" multiple
+             accept=".mp4,.mov,.avi,.mkv,.pdf,.jpg,.jpeg,.png,.bmp,.webp,.gif"
+             style="display:none" />
+      <div class="mtv-file-list" id="mtvFileList"></div>
+    </div>
+
+    <!-- 2. Music -->
+    <div class="mtv-section">
+      <div class="mtv-section-title">2. 背景音乐</div>
+      <div id="mtvMusicDrop" class="mtv-drop" tabindex="0" role="button">
+        <div class="mtv-drop-icon">🎵</div>
+        <div class="mtv-drop-title">拖拽或点击上传音乐文件</div>
+        <div class="mtv-drop-hint">支持 <strong>MP3 / WAV / AAC / FLAC / M4A</strong></div>
+      </div>
+      <input type="file" id="mtvMusicInput"
+             accept=".mp3,.wav,.aac,.flac,.m4a,.ogg"
+             style="display:none" />
+      <div id="mtvMusicSel" style="display:none" class="mtv-music-sel">
+        <div class="mtv-music-icon">🎵</div>
+        <div class="mtv-music-info">
+          <div class="mtv-music-name" id="mtvMusicName">—</div>
+          <div class="mtv-music-meta" id="mtvMusicMeta"></div>
+        </div>
+        <button class="mtv-file-rm" title="移除" onclick="removeMtvMusic()">✕</button>
+      </div>
+    </div>
+
+    <!-- 3. Options -->
+    <div class="mtv-section">
+      <div class="mtv-section-title">3. 切换设置</div>
+      <div class="mtv-opts">
+        <div class="mtv-opt-group">
+          <div class="mtv-opt-label">素材循环次数</div>
+          <div class="mtv-radios" id="mtvBpsGroup">
+            <button class="mtv-radio-btn active" data-val="1" onclick="setBps(this)">1次（均分时长）</button>
+            <button class="mtv-radio-btn"        data-val="2" onclick="setBps(this)">2次循环</button>
+            <button class="mtv-radio-btn"        data-val="4" onclick="setBps(this)">4次循环</button>
+            <button class="mtv-radio-btn"        data-val="8" onclick="setBps(this)">8次循环</button>
+          </div>
+        </div>
+        <div class="mtv-opt-group">
+          <div class="mtv-opt-label">输出分辨率</div>
+          <div class="mtv-radios" id="mtvResGroup">
+            <button class="mtv-radio-btn active" data-val="720p"  onclick="setRes(this)">720p</button>
+            <button class="mtv-radio-btn"        data-val="1080p" onclick="setRes(this)">1080p</button>
+          </div>
+        </div>
+        <div class="mtv-opt-group">
+          <div class="mtv-opt-label">画面方向</div>
+          <div class="mtv-radios" id="mtvOrientGroup">
+            <button class="mtv-radio-btn active" data-val="landscape" onclick="setOrient(this)">横屏 16:9</button>
+            <button class="mtv-radio-btn"        data-val="portrait"  onclick="setOrient(this)">竖屏 9:16（手机/截图）</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generate button -->
+    <button class="btn btn-accent" id="mtvGenerateBtn"
+            onclick="generateMtv()" style="margin-top:4px; padding:12px 32px; font-size:15px;">
+      🎬 开始生成 MTV
+    </button>
+
+    <!-- Progress card (hidden until generation starts) -->
+    <div id="mtvProgressCard" style="display:none; margin-top:24px;
+         background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:28px 32px;">
+
+      <!-- Steps -->
+      <div class="mtv-steps steps">
+        <div class="step" id="ms-analyze">
+          <div class="step-dot">🎵</div>
+          <div class="step-label">分析节拍</div>
+        </div>
+        <div class="step" id="ms-prepare">
+          <div class="step-dot">📂</div>
+          <div class="step-label">准备素材</div>
+        </div>
+        <div class="step" id="ms-render">
+          <div class="step-dot">🎞</div>
+          <div class="step-label">渲染片段</div>
+        </div>
+        <div class="step" id="ms-done">
+          <div class="step-dot">✓</div>
+          <div class="step-label">完成</div>
+        </div>
+      </div>
+
+      <div class="bar-track">
+        <div class="bar-fill" id="mtvBarFill" style="width:0%"></div>
+      </div>
+      <div class="progress-msg" id="mtvProgressMsg">准备中...</div>
+
+      <div style="margin-top:16px; text-align:center;">
+        <button class="btn btn-success" id="mtvDownloadBtn" style="display:none; padding:11px 28px; font-size:15px;"
+                onclick="downloadMtv()">⬇ 下载 MTV (MP4)</button>
+        <button class="btn btn-ghost" id="mtvNewBtn" style="display:none; margin-left:8px;"
+                onclick="resetMtv()">↺ 重新生成</button>
+      </div>
+    </div>
+
+  </div><!-- #tabMtv -->
+
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  let currentJobId     = null;
+  let subtitles        = [];
+  let evtSource        = null;
+  let ffmpegAvail      = false;
+  let ttsAvail      = false;
+  let videoInitialized = false;
+  let currentPreset    = null;
+  let dubEvtSource     = null;
+
+  /* ── Startup: environment check ─────────────────────────────── */
+  (async function checkEnv() {
+    try {
+      const checkData = await (await fetch('/api/check')).json();
+      ffmpegAvail = checkData.ffmpeg;
+      ttsAvail    = checkData.google_tts;
+      const box = document.getElementById('alerts');
+      if (!checkData.api_key) {
+        box.insertAdjacentHTML('beforeend', `
+          <div class="alert alert-warn">
+            &#x26A0; 未设置 <strong>GOOGLE_API_KEY</strong> 环境变量，无法调用 Gemini API。
+          </div>`);
+      }
+      // Hide AI model options whose keys are not configured
+      const sel = document.getElementById('aiModelSelect');
+      sel.querySelectorAll('option[data-key]').forEach(opt => {
+        if (!checkData[opt.dataset.key]) opt.remove();
+      });
+    } catch (_) {}
+    checkLastJob();
+  })();
+
+  /* ── Upload area ─────────────────────────────────────────────── */
+  const uploadCard = document.getElementById('uploadCard');
+  const fileInput  = document.getElementById('fileInput');
+
+  uploadCard.addEventListener('click',   () => fileInput.click());
+  uploadCard.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+
+  uploadCard.addEventListener('dragover',  (e) => { e.preventDefault(); uploadCard.classList.add('dragging'); });
+  uploadCard.addEventListener('dragleave', (e) => { if (!uploadCard.contains(e.relatedTarget)) uploadCard.classList.remove('dragging'); });
+  uploadCard.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadCard.classList.remove('dragging');
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+  async function handleFile(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['mp4','mov','avi','mkv'].includes(ext)) {
+      alert('不支持该格式，请上传 MP4 / MOV / AVI / MKV 文件');
+      return;
+    }
+
+    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+
+    uploadCard.style.display = 'none';
+    document.getElementById('aiModelBar').style.display = 'none';
+    document.getElementById('progressCard').style.display = 'block';
+
+    setStep('upload', 'active');
+    setBar(1, `准备上传 (${fileSizeMB} MB)...`);
+    clearLogAndPreview();
+
+    const form = new FormData();
+    form.append('video', file);
+    const aiModel = document.getElementById('aiModelSelect').value;
+
+    try {
+      const job_id = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round(e.loaded / e.total * 100);
+            setBar(Math.round(pct * 0.09) + 1,
+                   `正在上传文件 (${fileSizeMB} MB)... ${pct}%`);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (data.job_id) resolve(data.job_id);
+              else reject(new Error(data.error || '上传失败'));
+            } catch (_) { reject(new Error('响应解析失败')); }
+          } else {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              reject(new Error(data.error || `上传失败 (${xhr.status})`));
+            } catch (_) { reject(new Error(`上传失败 (${xhr.status})`)); }
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('网络错误'));
+        const trOn = document.getElementById('transcribeOnly')?.checked;
+        const engine = document.getElementById('transcribeEngine')?.value || 'gemini';
+        const transcribeOnly = trOn ? `&transcribe=1&engine=${engine}` : '';
+        xhr.open('POST', `/api/upload?ai_model=${encodeURIComponent(aiModel)}${transcribeOnly}`);
+        xhr.send(form);
+      });
+
+      currentJobId = job_id;
+      localStorage.setItem('lastJobId', job_id);
+      // Store filename for history
+      window._currentFileName = file.name;
+
+      setStep('upload', 'done');
+      listenSSE(job_id);
+    } catch (e) {
+      setStep('upload', 'error');
+      setBar(0, '上传失败：' + e.message, true);
+    }
+  }
+
+  /* ── Server-Sent Events ──────────────────────────────────────── */
+  function listenSSE(jobId) {
+    if (evtSource) evtSource.close();
+    evtSource = new EventSource(`/api/status/${jobId}`);
+
+    evtSource.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      applyStatus(data);
+      if (['completed','error'].includes(data.status)) evtSource.close();
+    };
+    evtSource.onerror = () => evtSource.close();
+  }
+
+  function applyStatus(data) {
+    if (data.error) { setBar(0, data.error, true); return; }
+
+    setBar(data.progress || 0, data.message || '');
+
+    // Sticky model-fallback warning (set when translation didn't use the
+    // chosen model — e.g. quota/limit forced a fallback). Persists until a
+    // new job, unlike the scrolling log.
+    const mw = document.getElementById('modelWarning');
+    if (mw) {
+      if (data.model_warning) {
+        mw.textContent = data.model_warning;
+        mw.style.display = 'block';
+      } else {
+        mw.style.display = 'none';
+      }
+    }
+
+    // Update live logs
+    if (data.logs && data.logs.length > 0) renderLogs(data.logs);
+
+    switch (data.status) {
+      case 'transcribing':
+        // Whisper local transcription path
+        setStep('upload',    'done');
+        setStep('gemini',    'active');
+        break;
+      case 'uploading_gemini':
+        setStep('upload',    'done');
+        setStep('gemini',    'active');
+        break;
+      case 'gemini_processing':
+        setStep('upload',    'done');
+        setStep('gemini',    'active');
+        break;
+      case 'generating':
+        setStep('upload',    'done');
+        setStep('gemini',    'done');
+        setStep('generate',  'active');
+        break;
+      case 'completed':
+        setStep('upload',    'done');
+        setStep('gemini',    'done');
+        setStep('generate',  'done');
+        setStep('done',      'done');
+        if (data.subtitle_preview && data.subtitle_preview.length > 0) {
+          showSubtitlePreview(data.subtitle_preview, data.message, data.transcribed_with);
+        }
+        onComplete();
+        break;
+      case 'error':
+        setBar(data.progress || 0, data.message || '处理失败', true);
+        document.getElementById('reprocessWrap').style.display = 'block';
+        break;
+    }
+  }
+
+  /* ── Live log rendering ──────────────────────────────────────── */
+  function renderLogs(logs) {
+    const box = document.getElementById('logBox');
+    const entries = document.getElementById('logEntries');
+    box.style.display = 'block';
+    entries.innerHTML = logs.map(e =>
+      `<div class="log-entry log-${e.type || 'info'}">` +
+      `<span class="log-time">${esc(e.time)}</span>` +
+      `<span class="log-msg">${esc(e.msg)}</span>` +
+      `</div>`
+    ).join('');
+    // Auto-scroll to bottom
+    entries.scrollTop = entries.scrollHeight;
+  }
+
+  /* ── Subtitle preview (shown on complete, before video loads) ── */
+  function showSubtitlePreview(preview, msg, source) {
+    const area = document.getElementById('previewArea');
+    const label = document.getElementById('previewLabel');
+    const items = document.getElementById('previewItems');
+
+    const match = (msg || '').match(/\d+/);
+    const total = match ? match[0] : preview.length;
+    const badge = renderSourceBadge(source);
+    label.innerHTML = `已生成 ${total} 条字幕，前 ${preview.length} 条预览：${badge}`;
+
+    items.innerHTML = preview.map(sub => {
+      // 原文模式下后端把 original 和 translation 写成同一段文本；此时只显示一行，
+      // 否则同句会被叠成两行（看着像字幕重复）。仅当二者不同才显示原文行。
+      const showOrig = sub.original && sub.original !== sub.translation;
+      return `<div class="preview-item">` +
+      `<span class="preview-time">${fmtTime(sub.start)}</span>` +
+      (showOrig ? `<span class="preview-orig">${esc(sub.original)}</span>` : ``) +
+      `<span class="preview-trans">${esc(sub.translation)}</span>` +
+      `</div>`;
+    }).join('');
+
+    area.style.display = 'block';
+  }
+
+  function renderSourceBadge(source) {
+    if (source === 'whisper') {
+      return `<span class="src-badge whisper" title="Whisper 本地转录 + Gemini 翻译，时间戳精度 <100ms">🎯 Whisper VAD</span>`;
+    }
+    if (source === 'gemini') {
+      return `<span class="src-badge gemini" title="Gemini 视频分析（含时间戳）+ silence-snap 校正">☁ Gemini 视频</span>`;
+    }
+    return '';
+  }
+
+  function clearLogAndPreview() {
+    document.getElementById('logBox').style.display = 'none';
+    document.getElementById('logEntries').innerHTML = '';
+    document.getElementById('previewArea').style.display = 'none';
+    document.getElementById('previewItems').innerHTML = '';
+  }
+
+  async function onComplete() {
+    // Show video section immediately (before async fetch) so the player is always visible
+    const videoEl = document.getElementById('videoEl');
+    if (!videoInitialized) {
+      videoEl.src = `/api/video/${currentJobId}`;
+      videoEl.addEventListener('timeupdate', syncSubtitles);
+      // loadSubStyle()/updateStylePreview() below run before the video's metadata
+      // is in, so videoWrap.height is still 0 and the overlay font scales against
+      // the 720 fallback — wrong size until a slider nudge. Re-scale once the real
+      // video height is known so the preview matches the style panel on first paint.
+      videoEl.addEventListener('loadedmetadata', () => {
+        initBoxPosition();
+        if (typeof updateStylePreview === 'function') updateStylePreview();
+      }, { once: true });
+      videoInitialized = true;
+    }
+
+    if (ffmpegAvail) {
+      document.getElementById('downloadBurnBtn').style.display = '';
+    }
+    if (ffmpegAvail && ttsAvail) {
+      document.getElementById('dubBtn').style.display = '';
+      const dubVoiceEl = document.getElementById('dubVoice');
+      dubVoiceEl.style.display = '';
+      // onchange (not addEventListener) so repeated onComplete()/restore/resume
+      // calls replace this handler instead of stacking duplicate listeners.
+      dubVoiceEl.onchange = function() {
+        const isGemini = this.value.startsWith('gemini_');
+        document.getElementById('dubTtsModel').style.display = isGemini ? '' : 'none';
+      };
+    }
+
+    document.getElementById('reprocessBtn').style.display = '';
+    document.getElementById('reprocessSlideBtn').style.display = '';
+    document.getElementById('slideDubToolBtn').style.display = '';
+    document.getElementById('reprocessWrap').style.display = 'none';
+    document.getElementById('videoSection').style.display = 'block';
+    document.getElementById('alignBar').style.display = '';
+    document.getElementById('subStylePanel').style.display = 'block';
+    loadSubStyle();
+
+    // Fetch subtitles separately — errors here won't hide the player
+    try {
+      const res = await fetch(`/api/result/${currentJobId}`);
+      const data = await res.json();
+      subtitles = data.subtitles || [];
+      buildSubtitleList();
+      // 这个任务之前已配过音 → 刷新/恢复后直接亮出「下载配音」「下载字幕+配音视频」，
+      // 不必再配一次；改完字幕可直接重烧到已有配音上。
+      if (data.has_dub) {
+        document.getElementById('dubDownloadBtn').style.display = '';
+        if (ffmpegAvail) document.getElementById('dubBurnBtn').style.display = '';
+        const db = document.getElementById('dubBtn');
+        if (db && db.style.display !== 'none') db.textContent = '↺ 重新配音';
+        if (data.dub_voice) {
+          const dv = document.getElementById('dubVoice');
+          if (dv) { dv.value = data.dub_voice; if (dv.onchange) dv.onchange(); }
+        }
+      }
+      // Save to history — use Chinese title from subtitle content
+      const title = data.title || data.filename || currentJobId.slice(0, 8);
+      addHistory(currentJobId, title, subtitles.length, data.transcribed_with);
+    } catch (e) {
+      console.error('字幕加载失败:', e);
+    }
+  }
+
+  /* ── Subtitle sync with video time ──────────────────────────── */
+  function syncSubtitles() {
+    const t   = document.getElementById('videoEl').currentTime;
+    const sub = subtitles.find(s => t >= s.start && t <= s.end);
+    const text = sub ? sub.translation : '';
+
+    document.getElementById('subtitleText').textContent = text;
+    subBox.style.visibility = text ? 'visible' : 'hidden';
+
+    const list = document.getElementById('subtitleList');
+    const editing = list && list.contains(document.activeElement);
+    document.querySelectorAll('.sub-item').forEach((el, i) => {
+      const isActive = subtitles[i] === sub;
+      el.classList.toggle('active', isActive);
+      // 只在列表容器内部滚动，绝不滚动整个页面（否则视频会被顶出视野）；
+      // 用户正在编辑某条时也不自动滚，避免光标乱跳。
+      if (isActive && list && !editing) {
+        const elRect   = el.getBoundingClientRect();
+        const listRect = list.getBoundingClientRect();
+        const delta = (elRect.top - listRect.top) - (list.clientHeight - el.clientHeight) / 2;
+        if (Math.abs(delta) > 2) list.scrollBy({ top: delta, behavior: 'smooth' });
+      }
+    });
+  }
+
+  function buildSubtitleList() {
+    const list = document.getElementById('subtitleList');
+    list.innerHTML = '';
+    subtitles.forEach((sub, i) => {
+      const el = document.createElement('div');
+      el.className = 'sub-item';
+      // 原文模式下 original===translation；只显示可编辑的那一行，避免同句重复成两行。
+      const showOrig = sub.original && sub.original !== sub.translation;
+      el.innerHTML = `
+        <span class="sub-time">${fmtTime(sub.start)}</span>
+        ${showOrig ? `<span class="sub-orig">${esc(sub.original)}</span>` : ``}
+        <span class="sub-trans" contenteditable="true" spellcheck="false"></span>
+        <button class="sub-del" title="删除这条字幕">✕</button>`;
+      const transEl = el.querySelector('.sub-trans');
+      transEl.textContent = sub.translation;
+      // 直接编辑译文：实时写回内存（预览同步生效），改动后启用保存按钮
+      transEl.addEventListener('input', () => {
+        subtitles[i].translation = transEl.textContent;
+        markSubsDirty();
+      });
+      // 编辑时不触发整行的视频跳转
+      transEl.addEventListener('mousedown', (e) => e.stopPropagation());
+      transEl.addEventListener('click', (e) => e.stopPropagation());
+      // 删除这条
+      el.querySelector('.sub-del').addEventListener('click', (e) => {
+        e.stopPropagation();
+        subtitles.splice(i, 1);
+        buildSubtitleList();   // 重建以修正后续下标
+        markSubsDirty();
+      });
+      // 点时间码 / 原文 → 跳转到该句
+      const seek = () => { document.getElementById('videoEl').currentTime = sub.start; };
+      el.querySelector('.sub-time').addEventListener('click', seek);
+      const origEl = el.querySelector('.sub-orig');
+      if (origEl) origEl.addEventListener('click', seek);
+      list.appendChild(el);
+    });
+  }
+
+  window.shiftSubs = function (delta) {
+    if (!subtitles || !subtitles.length) return;
+    subtitles.forEach(s => {
+      s.start = Math.max(0, +(s.start + delta).toFixed(3));
+      s.end   = Math.max(s.start + 0.1, +(s.end + delta).toFixed(3));
+    });
+    buildSubtitleList();
+    syncSubtitles();
+    markSubsDirty();
+  };
+
+  window.importSRT = async function (input) {
+    const file = input.files && input.files[0];
+    if (!file || !currentJobId) { input.value = ''; return; }
+    try {
+      const text = await file.text();
+      const res = await fetch(`/api/import_srt/${currentJobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ srt: text })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      subtitles = data.subtitles || [];
+      buildSubtitleList();
+      syncSubtitles();
+      const btn = document.getElementById('saveSubsBtn');
+      if (btn) { btn.disabled = true; btn.textContent = '保存修改'; btn.classList.remove('dirty'); }
+      alert(`已导入 ${data.count} 条字幕`);
+    } catch (e) {
+      console.error('导入SRT失败', e);
+      alert('导入失败：' + e.message);
+    } finally {
+      input.value = '';
+    }
+  };
+
+  function markSubsDirty() {
+    const btn = document.getElementById('saveSubsBtn');
+    if (btn) { btn.disabled = false; btn.textContent = '保存修改'; btn.classList.add('dirty'); }
+  }
+
+  /* 保存前把屏幕上每条译文（contenteditable 的实时内容）直接抓回内存数组。
+     不依赖 'input' 事件——中文 IME 提交时 'input' 可能不触发，导致“看到改了
+     但没存进数组”。DOM 一定反映用户所见，所以以 DOM 为准最稳。列表每次结构
+     变化都会重建，故节点顺序与 subtitles 一一对应。 */
+  function harvestSubtitleEdits() {
+    const nodes = document.querySelectorAll('#subtitleList .sub-trans');
+    if (!nodes.length || nodes.length !== subtitles.length) return;
+    nodes.forEach((el, i) => { subtitles[i].translation = (el.textContent || '').trim(); });
+  }
+
+  window.saveSubtitles = async function () {
+    if (!currentJobId) return;
+    harvestSubtitleEdits();
+    const btn = document.getElementById('saveSubsBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+    try {
+      const res = await fetch(`/api/update_subtitles/${currentJobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subtitles })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || ('HTTP ' + res.status));
+      }
+      if (btn) { btn.textContent = '已保存 ✓'; btn.classList.remove('dirty'); }
+      setTimeout(() => { if (btn) { btn.textContent = '保存修改'; btn.disabled = true; } }, 1500);
+    } catch (e) {
+      console.error('保存字幕失败', e);
+      if (btn) { btn.textContent = '保存失败，重试'; btn.disabled = false; }
+    }
+  };
+
+  /* 烧录/配音前静默落盘当前编辑，确保后端 job["subtitles"] 是最新的；
+     不依赖用户先点「保存修改」。无字幕或无任务时直接放行。 */
+  async function pushSubtitles() {
+    if (!currentJobId || !subtitles || !subtitles.length) return;
+    harvestSubtitleEdits();
+    const res = await fetch(`/api/update_subtitles/${currentJobId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subtitles }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || ('保存字幕失败 HTTP ' + res.status));
+    }
+    const btn = document.getElementById('saveSubsBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '保存修改'; btn.classList.remove('dirty'); }
+  }
+
+  /* ── Download / Export ───────────────────────────────────────── */
+  window.exportSRT = function () {
+    if (!currentJobId) return;
+    triggerDownload(`/api/export/${currentJobId}`);
+  };
+
+  window.downloadOrig = function () {
+    if (!currentJobId) return;
+    triggerDownload(`/api/download/${currentJobId}`);
+  };
+
+  window.downloadBurned = async function () {
+    if (!currentJobId) return;
+    const btn = document.getElementById('downloadBurnBtn');
+    btn.textContent = '\u23F3 烧录中...';
+    btn.disabled = true;
+
+    // 先落盘当前编辑，否则后端读到的是旧字幕
+    try {
+      await pushSubtitles();
+    } catch (e) {
+      alert('烧录失败：' + e.message);
+      btn.textContent = '🎬 下载字幕视频';
+      btn.disabled = false;
+      return;
+    }
+
+    // Capture subtitle box position relative to video, using correct anchor per preset
+    const wr = videoWrap.getBoundingClientRect();
+    const br = subBox.getBoundingClientRect();
+    const fs = parseFloat(window.getComputedStyle(subText).fontSize) || 20;
+
+    const ALIGN_MAP = { tl: 7, tr: 9, mc: 5, bl: 1, br: 3 };
+    const ass_align = currentPreset ? (ALIGN_MAP[currentPreset] || 7) : 2;
+
+    let ax, ay; // anchor point fractions
+    switch (currentPreset) {
+      case 'tr':
+        ax = (br.right  - wr.left) / wr.width;
+        ay = (br.top    - wr.top)  / wr.height;
+        break;
+      case 'mc':
+        ax = (br.left + br.width  / 2 - wr.left) / wr.width;
+        ay = (br.top  + br.height / 2 - wr.top)  / wr.height;
+        break;
+      case 'bl':
+        ax = (br.left   - wr.left) / wr.width;
+        ay = (br.bottom - wr.top)  / wr.height;
+        break;
+      case 'br':
+        ax = (br.right  - wr.left) / wr.width;
+        ay = (br.bottom - wr.top)  / wr.height;
+        break;
+      case null: // default bottom-center position (no preset selected, no drag)
+        ax = (br.left + br.width  / 2 - wr.left) / wr.width;
+        ay = (br.bottom - wr.top) / wr.height;
+        break;
+      default: // tl or free-drag
+        ax = (br.left - wr.left) / wr.width;
+        ay = (br.top  - wr.top)  / wr.height;
+    }
+
+    const ssParams = getSubStyleParams();
+    const burnStyle = {
+      x_frac:         Math.max(0, Math.min(1, ax)),
+      y_frac:         Math.max(0, Math.min(1, ay)),
+      font_size_frac: ssParams.font_size_frac,
+      ass_align,
+      outline:        ssParams.outline,
+      sub_color:      ssParams.sub_color,
+      max_chars:      ssParams.max_chars,
+      trim_end:       (document.getElementById('trimEndAd')?.checked
+                       ? (parseFloat(document.getElementById('trimEndSec')?.value) || 0) : 0),
+    };
+
+    fetch(`/api/download/${currentJobId}?burn=1`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(burnStyle),
+    })
+      .then(res => {
+        if (!res.ok) return res.json().then(d => Promise.reject(d.error || '烧录失败'));
+        return res.blob();
+      })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = Object.assign(document.createElement('a'), {
+          href: url,
+          download: 'video_with_subtitles.mp4',
+        });
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+        btn.textContent = '\u21BA 重新烧录';
+        btn.disabled = false;
+      })
+      .catch(err => {
+        alert('烧录失败：' + err);
+        // Restore original label on error (may already be "重新烧录" on retry)
+        if (btn.textContent === '\u23F3 烧录中...') {
+          btn.textContent = '\uD83C\uDFAC 下载字幕视频';
+        }
+        btn.disabled = false;
+      });
+  };
+
+  function triggerDownload(url) {
+    const a = Object.assign(document.createElement('a'), { href: url });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  /* ── Subtitle box: drag & resize ─────────────────────────────── */
+  const subBox     = document.getElementById('subtitleBox');
+  const subText    = document.getElementById('subtitleText');
+  const resizeHand = document.getElementById('resizeHandle');
+  const videoWrap  = document.getElementById('videoWrap');
+
+  let dragging = false, resizing = false;
+  let origin   = {};
+  let boxInited = false;
+
+  function initBoxPosition() {
+    if (boxInited) return;
+    boxInited = true;
+
+    const wr = videoWrap.getBoundingClientRect();
+    const br = subBox.getBoundingClientRect();
+
+    // Clear preset attribute and convert to explicit px position
+    delete subBox.dataset.preset;
+    subBox.style.transform = 'none';
+    subBox.style.left      = (br.left - wr.left) + 'px';
+    subBox.style.top       = (br.top  - wr.top)  + 'px';
+    subBox.style.right     = 'auto';
+    subBox.style.bottom    = 'auto';
+  }
+
+  window.applyPreset = function (id) {
+    currentPreset = id;
+    // Highlight the active button
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.preset === id);
+    });
+    // Clear inline position overrides and let data-preset CSS take over
+    subBox.style.left      = '';
+    subBox.style.top       = '';
+    subBox.style.right     = '';
+    subBox.style.bottom    = '';
+    subBox.style.transform = '';
+    subBox.dataset.preset  = id;
+    // Link text alignment to preset
+    const textAlignMap = { tl: 'left', tr: 'right', mc: 'center', bl: 'left', br: 'right' };
+    subText.style.textAlign = textAlignMap[id] || 'center';
+    // Allow next drag to convert preset to explicit px
+    boxInited = false;
+  };
+
+  /* ── Subtitle Style Panel: localStorage + preview ──────────── */
+  // v2: bumped so old saved styles (font 30 / 45 chars) don't shadow the new
+  // defaults (font 38 / 36 chars per line, max 2 lines on screen).
+  const SS_KEY = 'subStyleSettings_v2';
+
+  function hexToAss(hex) {
+    // #RRGGBB → &H00BBGGRR (ASS format, alpha=00)
+    const r = hex.slice(1, 3), g = hex.slice(3, 5), b = hex.slice(5, 7);
+    return '&H00' + b.toUpperCase() + g.toUpperCase() + r.toUpperCase();
+  }
+
+  function assToHex(ass) {
+    // &H00BBGGRR → #RRGGBB
+    const s = ass.replace(/&H00/i, '');
+    if (s.length < 6) return '#FFFF00';
+    return '#' + s.slice(4, 6) + s.slice(2, 4) + s.slice(0, 2);
+  }
+
+  function getColorName(hex) {
+    const map = {
+      '#FFFF00': '黄色', '#FFFFFF': '白色', '#00FF00': '绿色',
+      '#00FFFF': '青色', '#FF0000': '红色', '#FF8C00': '橙色',
+    };
+    return map[hex.toUpperCase()] || hex;
+  }
+
+  function loadSubStyle() {
+    const saved = JSON.parse(localStorage.getItem(SS_KEY) || 'null');
+    if (saved) {
+      document.getElementById('ssFontSize').value  = saved.fontSize  || 38;
+      document.getElementById('ssMaxChars').value   = saved.maxChars  || 36;
+      document.getElementById('ssOutline').value    = saved.outline   || 3;
+      document.getElementById('ssColor').value      = saved.color     || '#FFFF00';
+    }
+    updateStylePreview();
+  }
+
+  function saveSubStyle() {
+    const s = {
+      fontSize: parseInt(document.getElementById('ssFontSize').value) || 38,
+      maxChars: parseInt(document.getElementById('ssMaxChars').value) || 36,
+      outline:  parseFloat(document.getElementById('ssOutline').value) || 3,
+      color:    document.getElementById('ssColor').value || '#FFFF00',
+    };
+    localStorage.setItem(SS_KEY, JSON.stringify(s));
+    return s;
+  }
+
+  window.updateStylePreview = function () {
+    const s = saveSubStyle();
+    // Update display labels
+    document.getElementById('ssFontSizeVal').textContent = s.fontSize + 'px';
+    document.getElementById('ssOutlineVal').textContent  = s.outline;
+    document.getElementById('ssColorName').textContent   = getColorName(s.color);
+
+    // Scale the live-preview font size to the CURRENT video height.
+    // The stored fontSize (e.g., 30) is interpreted as "30px at 720p height" —
+    // this matches what the backend ASS burn does (font_size_frac × video_height).
+    // Without this, mobile viewports with smaller video heights would render
+    // the overlay subtitle 3-5× larger than intended relative to the video.
+    const wr = videoWrap.getBoundingClientRect();
+    const videoH = wr.height || 720;
+    const scale = videoH / 720;                       // reference: 720p
+    const scaledFs = Math.max(12, s.fontSize * scale);  // floor 12px for legibility
+    const scaledOutline = Math.max(1, Math.round(s.outline * scale));
+
+    const px = scaledOutline;
+    const shadow = [
+      `-${px}px -${px}px 0 #000`, `0 -${px}px 0 #000`, `${px}px -${px}px 0 #000`,
+      `-${px}px 0 0 #000`, `${px}px 0 0 #000`,
+      `-${px}px ${px}px 0 #000`, `0 ${px}px 0 #000`, `${px}px ${px}px 0 #000`,
+    ].join(',');
+
+    // Live preview on subtitle overlay
+    subText.style.fontSize   = scaledFs + 'px';
+    subText.style.color      = s.color;
+    subText.style.textShadow = shadow;
+
+    // Preview box in the style panel — keep at fixed sample size (no video to
+    // scale against here; it's just a swatch of the chosen color + outline)
+    const pv = document.getElementById('ssPreviewText');
+    if (pv) {
+      const pvPx = Math.max(1, Math.round(s.outline));
+      const pvShadow = [
+        `-${pvPx}px -${pvPx}px 0 #000`, `0 -${pvPx}px 0 #000`, `${pvPx}px -${pvPx}px 0 #000`,
+        `-${pvPx}px 0 0 #000`, `${pvPx}px 0 0 #000`,
+        `-${pvPx}px ${pvPx}px 0 #000`, `0 ${pvPx}px 0 #000`, `${pvPx}px ${pvPx}px 0 #000`,
+      ].join(',');
+      pv.style.fontSize   = Math.min(s.fontSize, 36) + 'px';
+      pv.style.color      = s.color;
+      pv.style.textShadow = pvShadow;
+    }
+  };
+
+  // Re-apply scaling when the viewport changes (rotate phone, resize window,
+  // toggle dev tools, etc.) so the subtitle preview tracks the new video size.
+  window.addEventListener('resize', () => {
+    if (typeof updateStylePreview === 'function') updateStylePreview();
+  });
+
+  function getSubStyleParams() {
+    const s = JSON.parse(localStorage.getItem(SS_KEY) || 'null') || {
+      fontSize: 38, maxChars: 36, outline: 3, color: '#FFFF00',
+    };
+    const wr = videoWrap.getBoundingClientRect();
+    return {
+      font_size_frac: (s.fontSize || 38) / (wr.height || 720),
+      max_chars:      s.maxChars || 36,
+      outline:        s.outline  || 3,
+      sub_color:      hexToAss(s.color || '#FFFF00'),
+    };
+  }
+
+  subBox.addEventListener('mousedown', (e) => {
+    if (e.target === resizeHand || resizeHand.contains(e.target)) return;
+    initBoxPosition();
+    dragging = true;
+    origin = { mx: e.clientX, my: e.clientY, bx: subBox.offsetLeft, by: subBox.offsetTop };
+    e.preventDefault();
+  });
+
+  resizeHand.addEventListener('mousedown', (e) => {
+    initBoxPosition();
+    resizing = true;
+    origin = { mx: e.clientX, fs: parseFloat(window.getComputedStyle(subText).fontSize) || 20 };
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (dragging) {
+      subBox.style.left = (origin.bx + e.clientX - origin.mx) + 'px';
+      subBox.style.top  = (origin.by + e.clientY - origin.my) + 'px';
+    }
+    if (resizing) {
+      const dx    = e.clientX - origin.mx;
+      const newFs = Math.round(Math.max(13, Math.min(40, origin.fs + dx * 0.15)));
+      subText.style.fontSize = newFs + 'px';
+    }
+  });
+
+  document.addEventListener('mouseup', () => { dragging = false; resizing = false; });
+
+  /* ── Resume / Reprocess ──────────────────────────────────────── */
+  async function checkLastJob() {
+    const savedId = localStorage.getItem('lastJobId');
+    if (!savedId) return;
+    try {
+      const res = await fetch(`/api/job_info/${savedId}`);
+      if (!res.ok) { localStorage.removeItem('lastJobId'); return; }
+      const data = await res.json();
+      if (data.status === 'completed') {
+        showResumeBanner(savedId, '上次任务已处理完成，点击继续查看字幕', 'completed');
+      } else if (data.status === 'error') {
+        showResumeBanner(savedId, '上次任务处理失败，点击重新处理', 'error');
+      } else {
+        // Still in progress — auto-reconnect SSE
+        currentJobId = savedId;
+        uploadCard.style.display = 'none';
+        document.getElementById('progressCard').style.display = 'block';
+        applyStatus(data);
+        listenSSE(savedId);
+      }
+    } catch (_) {}
+  }
+
+  function showResumeBanner(jobId, text, type) {
+    const banner = document.getElementById('resumeBanner');
+    document.getElementById('resumeSubtext').textContent = text;
+    banner.dataset.jobId = jobId;
+    banner.dataset.type  = type;
+    banner.style.display = 'flex';
+  }
+
+  window.resumeLastJob = async function () {
+    const banner = document.getElementById('resumeBanner');
+    const jobId  = banner.dataset.jobId;
+    const type   = banner.dataset.type;
+    banner.style.display = 'none';
+    currentJobId = jobId;
+    if (type === 'completed') {
+      uploadCard.style.display = 'none';
+      document.getElementById('progressCard').style.display = 'block';
+      setStep('upload', 'done'); setStep('gemini', 'done');
+      setStep('generate', 'done'); setStep('done', 'done');
+      setBar(100, '处理完成');
+      await onComplete();
+    } else {
+      uploadCard.style.display = 'none';
+      document.getElementById('progressCard').style.display = 'block';
+      await reprocess();
+    }
+  };
+
+  window.dismissResume = function () {
+    document.getElementById('resumeBanner').style.display = 'none';
+    localStorage.removeItem('lastJobId');
+  };
+
+  window.reprocess = async function () {
+    if (!currentJobId) return;
+    document.getElementById('videoSection').style.display  = 'none';
+    document.getElementById('aiModelBar').style.display    = 'flex';
+    document.getElementById('progressCard').style.display  = 'block';
+    document.getElementById('reprocessWrap').style.display = 'none';
+    document.getElementById('reprocessBtn').style.display  = 'none';
+    document.getElementById('reprocessSlideBtn').style.display = 'none';
+    // Reset dub UI since subtitles will change
+    document.getElementById('dubStatus').style.display     = 'none';
+    document.getElementById('dubDownloadBtn').style.display = 'none';
+    document.getElementById('dubBurnBtn').style.display    = 'none';
+    document.getElementById('dubVoice').style.display      = 'none';
+    document.getElementById('dubTtsModel').style.display   = 'none';
+    const dubBtn = document.getElementById('dubBtn');
+    dubBtn.textContent = '\uD83C\uDFA4 生成中文配音';
+    dubBtn.disabled    = false;
+    if (dubEvtSource) { dubEvtSource.close(); dubEvtSource = null; }
+    clearLogAndPreview();
+    setStep('upload', 'done'); setStep('gemini', '');
+    setStep('generate', '');   setStep('done', '');
+    setBar(10, '准备重新处理...');
+    try {
+      const aiModel = document.getElementById('aiModelSelect').value;
+      const transcribeOnly = document.getElementById('transcribeOnly')?.checked ? '1' : '0';
+      const engine = document.getElementById('transcribeEngine')?.value || 'gemini';
+      const res = await fetch(`/api/reprocess/${currentJobId}?ai_model=${encodeURIComponent(aiModel)}&transcribe=${transcribeOnly}&engine=${engine}`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: '重新处理失败' }));
+        throw new Error(err.error);
+      }
+      listenSSE(currentJobId);
+    } catch (e) {
+      setBar(0, '重新处理启动失败：' + e.message, true);
+      document.getElementById('reprocessWrap').style.display = 'block';
+    }
+  };
+
+  window.reprocessSlide = async function () {
+    if (!currentJobId) return;
+    // Open slide modal so user can pick a new voice, then generate without re-uploading
+    openCurrentSlideModal();
+  };
+
+  /* ── History ────────────────────────────────────────────────── */
+  const HIST_KEY = 'videoSubHistory';
+
+  function getHistory() {
+    return JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
+  }
+
+  function addHistory(jobId, filename, subtitleCount, source) {
+    let hist = getHistory();
+    // Deduplicate by job_id — update if exists
+    hist = hist.filter(h => h.job_id !== jobId);
+    hist.unshift({
+      job_id: jobId,
+      filename: filename,
+      timestamp: Date.now(),
+      subtitle_count: subtitleCount,
+      source: source || '',
+    });
+    // Keep max 50
+    if (hist.length > 50) hist = hist.slice(0, 50);
+    localStorage.setItem(HIST_KEY, JSON.stringify(hist));
+  }
+
+  window.removeHistory = function (jobId) {
+    const hist = getHistory().filter(h => h.job_id !== jobId);
+    localStorage.setItem(HIST_KEY, JSON.stringify(hist));
+    renderHistory();
+  };
+
+  function renderHistory() {
+    const list = document.getElementById('historyList');
+    const hist = getHistory();
+    if (!hist.length) {
+      list.innerHTML = '<div class="history-empty">暂无历史记录<br><span style="font-size:11px;margin-top:4px;display:inline-block">处理完成的视频会自动保存在这里</span></div>';
+      return;
+    }
+    list.innerHTML = hist.map(h => {
+      const d = new Date(h.timestamp);
+      const timeStr = `${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+      const badge = renderSourceBadge(h.source);
+      return `<div class="history-item" onclick="restoreHistory('${h.job_id}')">
+        <div class="history-info">
+          <div class="history-name">${escHtml(h.filename)}</div>
+          <div class="history-meta">${timeStr} · ${h.subtitle_count} 条字幕${badge}</div>
+        </div>
+        <button class="history-slide" onclick="event.stopPropagation();openSlideModal('${h.job_id}')" title="Slide配音">📎 Slide配音</button>
+        <button class="history-del" onclick="event.stopPropagation();removeHistory('${h.job_id}')" title="删除">&times;</button>
+      </div>`;
+    }).join('');
+  }
+
+  window.toggleHistory = function () {
+    const overlay = document.getElementById('historyOverlay');
+    if (overlay.classList.contains('open')) {
+      overlay.classList.remove('open');
+    } else {
+      renderHistory();
+      overlay.classList.add('open');
+    }
+  };
+
+  window.closeHistory = function () {
+    document.getElementById('historyOverlay').classList.remove('open');
+  };
+
+  /* ── Slide Deck Dubbing ────────────────────────────────────── */
+  let _slideJobId = null;
+
+  window.openCurrentSlideModal = function () {
+    openSlideModal(currentJobId);
+  };
+
+  window.openSlideModal = function (jobId) {
+    _slideJobId = jobId || 'standalone';
+    closeHistory();
+    document.getElementById('slideFileInput').value = '';
+    const prog = document.getElementById('slideProgress');
+    prog.style.display = 'none';
+    prog.className = 'slide-progress';
+    // Clear previous download buttons if any
+    const dlWrap = document.getElementById('slideDlBtns');
+    if (dlWrap) dlWrap.remove();
+    const btn = document.getElementById('slideStartBtn');
+    btn.disabled = false;
+    btn.style.display = '';
+    btn.textContent = '开始生成配音';
+    btn.onclick = startSlideDub;
+    document.getElementById('slideOverlay').classList.add('open');
+
+    // Recover a task whose browser task_id was lost on a page refresh / tab switch:
+    // the dubbing runs in a background thread and keeps going regardless of the UI.
+    // Always re-attach a still-running task; restore download buttons for one that
+    // finished recently (<30 min) so a "completed while I was away" result isn't lost.
+    fetch(`/api/slide_dub_latest?job_id=${encodeURIComponent(_slideJobId)}`)
+      .then(r => r.json())
+      .then(j => {
+        const t = j && j.task;
+        if (!t) return;
+        if (t.status === 'running') {
+          attachSlideSse(t.task_id);
+        } else if (t.status === 'completed' && (t.age_sec == null || t.age_sec < 1800)) {
+          renderSlideDone(t.task_id, t.message, t.has_mp3, t.has_mp4);
+        }
+      })
+      .catch(() => {});
+  };
+
+  window.closeSlideModal = function () {
+    document.getElementById('slideOverlay').classList.remove('open');
+  };
+
+  window.startSlideDub = async function () {
+    const fileInput = document.getElementById('slideFileInput');
+    const hasFile = fileInput.files && fileInput.files[0];
+    // standalone mode: require a file (_slideJobId is always truthy here —
+    // 'standalone' for the no-video entry — so test the sentinel explicitly).
+    if (_slideJobId === 'standalone' && !hasFile) {
+      alert('请先选择 PDF 文件');
+      return;
+    }
+
+    const btn  = document.getElementById('slideStartBtn');
+    const prog = document.getElementById('slideProgress');
+    btn.disabled = true;
+    btn.textContent = hasFile ? '⏳ 上传中...' : '⏳ 处理中...';
+    prog.style.display = 'block';
+    prog.className = 'slide-progress';
+    prog.textContent = hasFile ? '正在上传文件...' : '使用已有文件，重新生成配音...';
+
+    const form = new FormData();
+    if (hasFile) form.append('file', fileInput.files[0]);
+    const slideVoiceVal = document.getElementById('slideVoice').value;
+    form.append('voice', slideVoiceVal);
+    const ttsModelEl = document.getElementById('geminiTtsModel');
+    if (ttsModelEl) form.append('tts_model', ttsModelEl.value);
+    const burnSubsEl = document.getElementById('slideBurnSubs');
+    const burnOn = burnSubsEl && burnSubsEl.checked;
+    form.append('burn_subs', burnOn ? '1' : '0');
+    if (burnOn) {
+      form.append('font_size_frac', document.getElementById('slideSubSize').value);
+      form.append('sub_color', document.getElementById('slideSubColor').value);
+      const pos = document.getElementById('slideSubPos').value;
+      // top = ASS align 8 (top-center) with small top margin; bottom = align 2
+      form.append('ass_align', pos === 'top' ? '8' : '2');
+      form.append('y_frac', pos === 'top' ? '0.95' : '0.92');
+    }
+
+    try {
+      const res = await fetch(`/api/slide_dub_start/${_slideJobId}`, {
+        method: 'POST',
+        body: form,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      btn.textContent = '⏳ 处理中...';
+      attachSlideSse(data.task_id);
+    } catch (e) {
+      prog.className = 'slide-progress error';
+      prog.textContent = '失败：' + e.message;
+      btn.textContent = '开始生成配音';
+      btn.disabled = false;
+    }
+  };
+
+  // Render the completed state (✓ + download buttons). Shared by live SSE
+  // completion and by recovery after a page refresh (openSlideModal).
+  function renderSlideDone(taskId, message, hasMp3, hasMp4) {
+    const btn  = document.getElementById('slideStartBtn');
+    const prog = document.getElementById('slideProgress');
+    prog.style.display = 'block';
+    prog.className = 'slide-progress done';
+    prog.textContent = '✓ ' + (message || '完成');
+    btn.style.display = 'none';
+    let dlWrap = document.getElementById('slideDlBtns');
+    if (!dlWrap) {
+      dlWrap = document.createElement('div');
+      dlWrap.id = 'slideDlBtns';
+      dlWrap.style.cssText = 'display:flex;gap:10px;margin-top:8px;';
+      btn.parentNode.insertBefore(dlWrap, btn.nextSibling);
+    }
+    const mp3 = (hasMp3 === false) ? '' :
+      `<button class="slide-dl-btn" onclick="window.location.href='/api/slide_dub_download/${taskId}'">⬇ 下载 MP3</button>`;
+    const mp4 = (hasMp4 === false) ? '' :
+      `<button class="slide-dl-btn" onclick="window.location.href='/api/slide_dub_download_mp4/${taskId}'">⬇ 下载 MP4 视频</button>`;
+    dlWrap.innerHTML = `
+      ${mp3}
+      ${mp4}
+      <button class="slide-dl-btn" style="background:var(--surface2);color:var(--muted);" onclick="this.closest('#slideDlBtns').remove();document.getElementById('slideStartBtn').style.display='';document.getElementById('slideStartBtn').textContent='开始生成配音';">重新配音</button>
+    `;
+  }
+
+  // Attach to a task's SSE progress stream. Used for a freshly started task AND
+  // to re-attach to a still-running task after a page refresh.
+  function attachSlideSse(taskId) {
+    const btn  = document.getElementById('slideStartBtn');
+    const prog = document.getElementById('slideProgress');
+    prog.style.display = 'block';
+    let doneOk = false;   // server closing the stream after success also fires onerror (reverse proxy)
+    const es = new EventSource(`/api/slide_dub_status/${taskId}`);
+    es.onmessage = function (e) {
+      const d = JSON.parse(e.data);
+      if (d.status === 'completed') {
+        doneOk = true;
+        es.close();
+        renderSlideDone(taskId, d.message);
+      } else if (d.status === 'error') {
+        es.close();
+        prog.className = 'slide-progress error';
+        prog.textContent = d.message;
+        btn.style.display = '';
+        btn.textContent = '开始生成配音';
+        btn.disabled = false;
+      } else {
+        prog.className = 'slide-progress';
+        prog.textContent = d.message || '';
+        btn.style.display = '';
+        btn.disabled = true;
+        btn.textContent = '⏳ 处理中...';
+      }
+    };
+    es.onerror = function () {
+      es.close();
+      if (doneOk) return;   // normal post-success stream close, not a real error
+      prog.className = 'slide-progress error';
+      prog.textContent = '连接中断';
+      btn.style.display = '';
+      btn.textContent = '开始生成配音';
+      btn.disabled = false;
+    };
+  }
+
+  window.restoreHistory = async function (jobId) {
+    closeHistory();
+    try {
+      const res = await fetch(`/api/job_info/${jobId}`);
+      if (!res.ok) {
+        alert('该任务已不存在，可能服务器已重启');
+        removeHistory(jobId);
+        return;
+      }
+      const info = await res.json();
+      if (info.status !== 'completed') {
+        alert('该任务状态为 ' + info.status + '，无法恢复');
+        return;
+      }
+      currentJobId = jobId;
+      localStorage.setItem('lastJobId', jobId);
+      uploadCard.style.display = 'none';
+      document.getElementById('progressCard').style.display = 'block';
+      setStep('upload', 'done'); setStep('gemini', 'done');
+      setStep('generate', 'done'); setStep('done', 'done');
+      setBar(100, '处理完成');
+      videoInitialized = false;
+      await onComplete();
+    } catch (e) {
+      alert('恢复失败：' + e.message);
+    }
+  };
+
+  window.newVideo = function () {
+    localStorage.removeItem('lastJobId');
+    location.reload();
+  };
+
+  /* ── Dubbing ─────────────────────────────────────────────────── */
+  window.startDubbing = async function () {
+    if (!currentJobId) return;
+    const btn = document.getElementById('dubBtn');
+    btn.disabled = true;
+    btn.textContent = '\u23F3 启动中...';
+    document.getElementById('dubDownloadBtn').style.display = 'none';
+
+    const voice = document.getElementById('dubVoice').value;
+    const dubTtsModelEl = document.getElementById('dubTtsModel');
+    const tts_model = (dubTtsModelEl && dubTtsModelEl.style.display !== 'none')
+      ? dubTtsModelEl.value
+      : 'gemini-3.1-flash-live-preview-tts';
+    console.log('posting voice:', voice, 'tts_model:', tts_model);
+    try {
+      const res = await fetch(`/api/dub/${currentJobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice, tts_model }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({ error: '启动失败' }));
+        throw new Error(d.error || '启动失败');
+      }
+      document.getElementById('dubStatus').style.display = 'block';
+      listenDubSSE(currentJobId);
+    } catch (e) {
+      alert('配音启动失败：' + e.message);
+      btn.textContent = '\uD83C\uDFA4 生成中文配音';
+      btn.disabled = false;
+    }
+  };
+
+  function listenDubSSE(jobId) {
+    if (dubEvtSource) dubEvtSource.close();
+    dubEvtSource = new EventSource(`/api/dub_status/${jobId}`);
+    dubEvtSource.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      applyDubStatus(data);
+      if (['completed', 'error'].includes(data.status)) dubEvtSource.close();
+    };
+    dubEvtSource.onerror = () => dubEvtSource.close();
+  }
+
+  function applyDubStatus(data) {
+    const msg    = document.getElementById('dubMsg');
+    const fill   = document.getElementById('dubBarFill');
+    const btn    = document.getElementById('dubBtn');
+
+    fill.style.width  = (data.progress || 0) + '%';
+    msg.textContent   = data.message || '';
+    msg.className     = 'dub-status-msg' + (data.status === 'error' ? ' error' : '');
+
+    if (data.status === 'completed') {
+      document.getElementById('dubDownloadBtn').style.display = '';
+      if (ffmpegAvail) document.getElementById('dubBurnBtn').style.display = '';
+      btn.textContent = '\u21BA 重新配音';
+      btn.disabled    = false;
+    } else if (data.status === 'error') {
+      btn.textContent = '\uD83C\uDFA4 生成中文配音';
+      btn.disabled    = false;
+    }
+  }
+
+  window.downloadDub = function () {
+    if (!currentJobId) return;
+    triggerDownload(`/api/dub_download/${currentJobId}`);
+  };
+
+  window.downloadDubBurned = async function () {
+    if (!currentJobId) return;
+
+    const btn    = document.getElementById('dubBurnBtn');
+    const status = document.getElementById('dubBurnStatus');
+
+    btn.disabled         = true;
+    btn.textContent      = '\u23F3 处理中...';
+    status.style.display = '';
+    status.style.color   = 'var(--muted)';
+    status.textContent   = '正在烧录字幕...';
+
+    function resetBtn(errMsg) {
+      btn.textContent      = '\uD83C\uDFAC 下载字幕+配音视频';
+      btn.disabled         = false;
+      if (errMsg) {
+        status.style.color = 'var(--error)';
+        status.textContent = `失败：${errMsg}`;
+      } else {
+        status.style.display = 'none';
+      }
+    }
+
+    // 先落盘当前编辑，否则配音烧录用的是旧字幕
+    try {
+      await pushSubtitles();
+    } catch (e) {
+      resetBtn(e.message);
+      return;
+    }
+
+    // Step 1: kick off async task（带当前选中的 voice + 字幕样式）
+    const voice = document.getElementById('dubVoice')?.value || 'zh_female';
+    const ssParams = getSubStyleParams();
+    console.log('posting voice:', voice, 'style:', ssParams);
+    fetch(`/api/burn_dub_start/${currentJobId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice, ...ssParams }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) { resetBtn(data.error); return; }
+        const taskId = data.task_id;
+
+        // Step 2: listen to SSE progress
+        let doneOk = false;
+        const es = new EventSource(`/api/burn_dub_status/${taskId}`);
+        es.onmessage = function (e) {
+          const d = JSON.parse(e.data);
+          if (d.error) { es.close(); resetBtn(d.error); return; }
+
+          status.textContent = d.message || '';
+
+          if (d.status === 'completed') {
+            doneOk = true;
+            es.close();
+            // 先把按钮改为手动备用下载
+            status.style.display = 'none';
+            btn.textContent = '⬇ 点击下载';
+            btn.disabled = false;
+            const dlUrl = `/api/burn_dub_download/${taskId}`;
+            btn.onclick = function () {
+              window.location.href = dlUrl;
+              setTimeout(() => { btn.onclick = window.downloadDubBurned; resetBtn(null); }, 3000);
+            };
+            // 用 setTimeout 跳出 SSE 回调，自动触发下载
+            setTimeout(function () {
+              window.location.href = dlUrl;
+              setTimeout(() => { btn.onclick = window.downloadDubBurned; resetBtn(null); }, 3000);
+            }, 200);
+          } else if (d.status === 'error') {
+            es.close();
+            resetBtn(d.message || '未知错误');
+          }
+        };
+        es.onerror = function () {
+          es.close();
+          // 服务端正常关闭连接也会触发 onerror；只在未收到 completed 时才报错
+          if (!doneOk) resetBtn('连接中断，请重试');
+        };
+      })
+      .catch(err => resetBtn(String(err)));
+  };
+
+  /* ── Helpers ─────────────────────────────────────────────────── */
+  function setStep(name, state) {
+    const el = document.getElementById('s-' + name);
+    if (el) el.className = 'step ' + state;
+  }
+
+  function setBar(pct, msg, isError = false) {
+    document.getElementById('barFill').style.width = pct + '%';
+    const el = document.getElementById('progressMsg');
+    el.textContent = msg;
+    el.className   = 'progress-msg' + (isError ? ' error' : '');
+  }
+
+  function fmtTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ── Tab Switching ───────────────────────────────────────────── */
+  window.switchTab = function (name) {
+    document.getElementById('tabSubtitle').style.display = name === 'subtitle' ? '' : 'none';
+    document.getElementById('tabMtv').style.display      = name === 'mtv'      ? '' : 'none';
+    document.getElementById('tabBtnSubtitle').classList.toggle('active', name === 'subtitle');
+    document.getElementById('tabBtnMtv').classList.toggle('active',      name === 'mtv');
+  };
+
+})();
+
+/* ════════════════════════════════════════════════════════════════
+   MTV Generator
+   ════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  let mtvVisualFiles = [];   // { file: File, type: 'video'|'image'|'pdf' }
+  let mtvMusicFile   = null;
+  let mtvBeats       = 1;
+  let mtvRes         = '720p';
+  let mtvOrient      = 'landscape';
+  let mtvJobId       = null;
+  let mtvEvtSource   = null;
+  let mtvReconnTimer = null;   // pending SSE reconnect (set on transient drop)
+  let mtvSseDone     = false;  // true once a terminal status arrived; stops reconnects
+  let mtvSseBackoff  = 1000;   // reconnect delay (ms), grows on repeated drops
+  let mtvLastMsg     = '';     // last good progress text, restored after a drop
+  let mtvPymupdf     = false;
+
+  // ── Startup checks ─────────────────────────────────────────────
+  (async function initMtv() {
+    try {
+      const d = await (await fetch('/api/check')).json();
+      mtvPymupdf  = d.pdf_support || false;
+      const box   = document.getElementById('mtvAlerts');
+
+      if (!d.ffmpeg) {
+        box.innerHTML = `<div class="mtv-warn">⚠ 未检测到 ffmpeg，MTV 生成功能不可用。请先安装 ffmpeg 并确保它在 PATH 中。</div>`;
+        document.getElementById('mtvGenerateBtn').disabled = true;
+      } else {
+        if (!mtvPymupdf) {
+          box.insertAdjacentHTML('beforeend',
+            `<div class="mtv-warn">⚠ PDF 支持不可用（需要 pymupdf 或 poppler）。<br>
+             请运行：<code>pip install pdf2image</code> 并安装 poppler</div>`);
+          // Disable PDF in accept attr
+          const inp = document.getElementById('mtvVisualInput');
+          inp.accept = '.mp4,.mov,.avi,.mkv,.jpg,.jpeg,.png,.bmp,.webp,.gif';
+        }
+      }
+    } catch (_) {}
+  })();
+
+  // ── Visual drop zone ───────────────────────────────────────────
+  const visualDrop  = document.getElementById('mtvVisualDrop');
+  const visualInput = document.getElementById('mtvVisualInput');
+
+  visualDrop.addEventListener('click',   () => visualInput.click());
+  visualDrop.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') visualInput.click(); });
+  visualDrop.addEventListener('dragover',  e => { e.preventDefault(); visualDrop.classList.add('dragging'); });
+  visualDrop.addEventListener('dragleave', e => { if (!visualDrop.contains(e.relatedTarget)) visualDrop.classList.remove('dragging'); });
+  visualDrop.addEventListener('drop', e => {
+    e.preventDefault();
+    visualDrop.classList.remove('dragging');
+    addVisualFiles(Array.from(e.dataTransfer.files));
+  });
+  visualInput.addEventListener('change', e => {
+    addVisualFiles(Array.from(e.target.files));
+    e.target.value = '';
+  });
+
+  const VIDEO_EXTS  = new Set(['.mp4','.mov','.avi','.mkv']);
+  const IMAGE_EXTS  = new Set(['.jpg','.jpeg','.png','.bmp','.webp','.gif','.tiff']);
+  const PDF_EXTS    = new Set(['.pdf']);
+
+  function classifyFile(file) {
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    if (VIDEO_EXTS.has(ext))  return 'video';
+    if (IMAGE_EXTS.has(ext))  return 'image';
+    if (PDF_EXTS.has(ext))    return 'pdf';
+    return null;
+  }
+
+  function addVisualFiles(files) {
+    for (const f of files) {
+      const type = classifyFile(f);
+      if (!type) continue;
+      if (type === 'pdf' && !mtvPymupdf) continue;
+      mtvVisualFiles.push({ file: f, type });
+    }
+    renderFileList();
+  }
+
+  function renderFileList() {
+    const list = document.getElementById('mtvFileList');
+    list.innerHTML = mtvVisualFiles.map((item, i) => {
+      const icons  = { video: '🎬', image: '🖼', pdf: '📄' };
+      const labels = { video: '视频', image: '图片', pdf: 'PDF' };
+      const badge  = { video: 'badge-video', image: 'badge-image', pdf: 'badge-pdf' };
+      return `<div class="mtv-file-item">
+        <span class="mtv-file-type">${icons[item.type]}</span>
+        <span class="mtv-file-name" title="${escHtml(item.file.name)}">${escHtml(item.file.name)}</span>
+        <span class="mtv-file-badge ${badge[item.type]}">${labels[item.type]}</span>
+        <button class="mtv-file-rm" onclick="removeMtvVisual(${i})" title="移除">✕</button>
+      </div>`;
+    }).join('');
+  }
+
+  window.removeMtvVisual = function (idx) {
+    mtvVisualFiles.splice(idx, 1);
+    renderFileList();
+  };
+
+  // ── Music drop zone ────────────────────────────────────────────
+  const musicDrop  = document.getElementById('mtvMusicDrop');
+  const musicInput = document.getElementById('mtvMusicInput');
+
+  musicDrop.addEventListener('click',   () => musicInput.click());
+  musicDrop.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') musicInput.click(); });
+  musicDrop.addEventListener('dragover',  e => { e.preventDefault(); musicDrop.classList.add('dragging'); });
+  musicDrop.addEventListener('dragleave', e => { if (!musicDrop.contains(e.relatedTarget)) musicDrop.classList.remove('dragging'); });
+  musicDrop.addEventListener('drop', e => {
+    e.preventDefault();
+    musicDrop.classList.remove('dragging');
+    const f = e.dataTransfer.files[0];
+    if (f) setMusicFile(f);
+  });
+  musicInput.addEventListener('change', e => {
+    if (e.target.files[0]) setMusicFile(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  function setMusicFile(file) {
+    const MUSIC_EXTS = new Set(['.mp3','.wav','.aac','.flac','.m4a','.ogg']);
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    if (!MUSIC_EXTS.has(ext)) { alert('不支持该音乐格式'); return; }
+    mtvMusicFile = file;
+    document.getElementById('mtvMusicDrop').style.display = 'none';
+    const sel = document.getElementById('mtvMusicSel');
+    sel.style.display = '';
+    document.getElementById('mtvMusicName').textContent = file.name;
+    document.getElementById('mtvMusicMeta').textContent =
+      '大小 ' + (file.size / 1048576).toFixed(1) + ' MB';
+  }
+
+  window.removeMtvMusic = function () {
+    mtvMusicFile = null;
+    document.getElementById('mtvMusicDrop').style.display = '';
+    document.getElementById('mtvMusicSel').style.display  = 'none';
+  };
+
+  // ── Option toggles ─────────────────────────────────────────────
+  window.setBps = function (btn) {
+    mtvBeats = parseInt(btn.dataset.val, 10);
+    document.querySelectorAll('#mtvBpsGroup .mtv-radio-btn').forEach(b =>
+      b.classList.toggle('active', b === btn));
+  };
+  window.setRes = function (btn) {
+    mtvRes = btn.dataset.val;
+    document.querySelectorAll('#mtvResGroup .mtv-radio-btn').forEach(b =>
+      b.classList.toggle('active', b === btn));
+  };
+  window.setOrient = function (btn) {
+    mtvOrient = btn.dataset.val;
+    document.querySelectorAll('#mtvOrientGroup .mtv-radio-btn').forEach(b =>
+      b.classList.toggle('active', b === btn));
+  };
+
+  // ── Generate ───────────────────────────────────────────────────
+  window.generateMtv = async function () {
+    if (!mtvVisualFiles.length) { alert('请先上传视觉素材'); return; }
+    if (!mtvMusicFile)          { alert('请先上传音乐文件'); return; }
+
+    const btn = document.getElementById('mtvGenerateBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ 上传中...';
+
+    document.getElementById('mtvProgressCard').style.display = 'block';
+    document.getElementById('mtvDownloadBtn').style.display  = 'none';
+    document.getElementById('mtvNewBtn').style.display       = 'none';
+    setMtvBar(0, '正在上传文件...');
+    setMtvStep('analyze', '');
+    setMtvStep('prepare', '');
+    setMtvStep('render',  '');
+    setMtvStep('done',    '');
+
+    const form = new FormData();
+    form.append('music', mtvMusicFile, mtvMusicFile.name);
+    for (const item of mtvVisualFiles) {
+      form.append('visuals[]', item.file, item.file.name);
+    }
+    form.append('beats_per_switch', String(mtvBeats));
+    form.append('resolution', mtvRes);
+    form.append('orientation', mtvOrient);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      const jobId = await new Promise((resolve, reject) => {
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) {
+            const pct = Math.round(e.loaded / e.total * 100);
+            setMtvBar(Math.round(pct * 0.04), `正在上传... ${pct}%`);
+          }
+        };
+        xhr.onload = () => {
+          try {
+            const d = JSON.parse(xhr.responseText);
+            if (d.job_id) resolve(d.job_id);
+            else reject(new Error(d.error || '请求失败'));
+          } catch (_) { reject(new Error('响应解析失败')); }
+        };
+        xhr.onerror = () => reject(new Error('网络错误'));
+        xhr.open('POST', '/api/mtv/create');
+        xhr.send(form);
+      });
+
+      mtvJobId = jobId;
+      btn.textContent = '⏳ 生成中...';
+      listenMtvSSE(jobId);
+    } catch (e) {
+      setMtvBar(0, '启动失败：' + e.message, true);
+      btn.disabled = false;
+      btn.textContent = '🎬 开始生成 MTV';
+    }
+  };
+
+  function listenMtvSSE(jobId) {
+    // Fresh (re)generated job — reset reconnect state, then connect.
+    mtvSseDone    = false;
+    mtvSseBackoff = 1000;
+    if (mtvReconnTimer) { clearTimeout(mtvReconnTimer); mtvReconnTimer = null; }
+    connectMtvSSE(jobId);
+  }
+
+  // Opens the MTV progress SSE and auto-reconnects on transient drops.
+  // MTV renders are long; over the external reverse proxy
+  // (<tunnel-host>:<port>) the idle/read timeout silently cuts the stream
+  // mid-render. The backend keeps rendering and mtv_jobs[jobId] persists, so
+  // a fresh connection immediately resumes from the current progress (the
+  // server re-sends state on connect). Without this, onerror used to just
+  // .close() and the UI froze at the last frame seen (e.g. 8/16) forever.
+  function connectMtvSSE(jobId) {
+    if (mtvEvtSource) mtvEvtSource.close();
+    mtvEvtSource = new EventSource(`/api/mtv/status/${jobId}`);
+    mtvEvtSource.onmessage = e => {
+      mtvSseBackoff = 1000;            // healthy stream → reset backoff
+      const d = JSON.parse(e.data);
+      applyMtvStatus(d);
+      if (['completed','error'].includes(d.status)) {
+        mtvSseDone = true;
+        mtvEvtSource.close();
+      }
+    };
+    mtvEvtSource.onerror = () => {
+      if (mtvEvtSource) mtvEvtSource.close();
+      // Server closes the stream after a terminal status → onerror fires too.
+      // Don't reconnect if we're done, or if the job was reset/replaced.
+      if (mtvSseDone || mtvJobId !== jobId) return;
+      const delay = mtvSseBackoff;
+      mtvSseBackoff = Math.min(mtvSseBackoff * 1.5, 8000);
+      const el = document.getElementById('mtvProgressMsg');
+      if (el && !el.classList.contains('error')) {
+        el.textContent = (mtvLastMsg || '处理中') + ' · 连接中断，正在重连…';
+      }
+      mtvReconnTimer = setTimeout(() => {
+        if (!mtvSseDone && mtvJobId === jobId) connectMtvSSE(jobId);
+      }, delay);
+    };
+  }
+
+  function applyMtvStatus(d) {
+    if (d.error) { setMtvBar(0, d.error, true); return; }
+    setMtvBar(d.progress || 0, d.message || '');
+
+    const s = d.status;
+    if (s === 'analyzing') {
+      setMtvStep('analyze', 'active');
+    } else if (s === 'preparing') {
+      setMtvStep('analyze', 'done'); setMtvStep('prepare', 'active');
+    } else if (s === 'rendering') {
+      setMtvStep('analyze', 'done'); setMtvStep('prepare', 'done');
+      setMtvStep('render',  'active');
+    } else if (s === 'merging' || s === 'finalizing') {
+      setMtvStep('analyze', 'done'); setMtvStep('prepare', 'done');
+      setMtvStep('render',  'done');
+    } else if (s === 'completed') {
+      setMtvStep('analyze', 'done'); setMtvStep('prepare', 'done');
+      setMtvStep('render',  'done'); setMtvStep('done',    'done');
+      document.getElementById('mtvDownloadBtn').style.display = '';
+      document.getElementById('mtvNewBtn').style.display      = '';
+      document.getElementById('mtvGenerateBtn').textContent   = '🎬 开始生成 MTV';
+      document.getElementById('mtvGenerateBtn').disabled      = false;
+    } else if (s === 'error') {
+      setMtvBar(0, d.message || '生成失败', true);
+      document.getElementById('mtvGenerateBtn').textContent = '🎬 开始生成 MTV';
+      document.getElementById('mtvGenerateBtn').disabled    = false;
+      document.getElementById('mtvNewBtn').style.display    = '';
+    }
+  }
+
+  window.downloadMtv = function () {
+    if (!mtvJobId) return;
+    const a = document.createElement('a');
+    a.href = `/api/mtv/download/${mtvJobId}`;
+    a.download = 'mtv_output.mp4';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  window.resetMtv = function () {
+    mtvJobId = null;
+    mtvSseDone = true;   // block any in-flight reconnect for the old job
+    if (mtvReconnTimer) { clearTimeout(mtvReconnTimer); mtvReconnTimer = null; }
+    if (mtvEvtSource) { mtvEvtSource.close(); mtvEvtSource = null; }
+    document.getElementById('mtvProgressCard').style.display = 'none';
+    document.getElementById('mtvGenerateBtn').disabled       = false;
+    document.getElementById('mtvGenerateBtn').textContent    = '🎬 开始生成 MTV';
+  };
+
+  // ── Helpers ────────────────────────────────────────────────────
+  function setMtvBar(pct, msg, isError = false) {
+    document.getElementById('mtvBarFill').style.width = pct + '%';
+    const el = document.getElementById('mtvProgressMsg');
+    el.textContent = msg;
+    el.className   = 'progress-msg' + (isError ? ' error' : '');
+    if (!isError && msg) mtvLastMsg = msg;   // remember for reconnect notice
+  }
+
+  function setMtvStep(name, state) {
+    const el = document.getElementById('ms-' + name);
+    if (el) el.className = 'step ' + state;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+})();
+
+// ── GPU thermal badge: poll /api/gpu/status, colour by thresholds ──
+(function(){
+  const badge = document.getElementById('gpuBadge');
+  const txt = document.getElementById('gpuBadgeText');
+  if(!badge) return;
+  async function tick(){
+    try{
+      const s = await (await fetch('/api/gpu/status')).json();
+      if(s.enabled === false){ badge.style.display='none'; return; }
+      const t = s.temp, trip = s.trip_c ?? 65, resume = s.resume_c ?? 55, ceil = s.hard_ceil_c ?? 88;
+      badge.style.display='inline-flex';
+      badge.classList.remove('crit');
+      if(t == null){ badge.style.background='#6b7280'; txt.textContent='GPU 无信号'; return; }
+      let bg, label='';
+      if(t >= ceil){ bg='#b91c1c'; label=' · 熔断'; badge.classList.add('crit'); }
+      else if(t >= trip){ bg='#dc2626'; label=' · 暂停冷却'; }
+      else if(t >= resume){ bg='#d97706'; }
+      else { bg='#16a34a'; }
+      badge.style.background=bg;
+      txt.textContent=`GPU ${t}°C${label}`;
+    }catch(e){ /* server restart / offline — leave last state */ }
+  }
+  tick(); setInterval(tick, 3000);
+})();
+</script>
+</body>
+</html>

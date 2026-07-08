@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>卡拉OK字幕(强制对齐)</title>
+<style>
+  :root{--bg:#0f1115;--card:#171a21;--bd:#262b36;--fg:#e7ebf0;--mut:#8b94a3;--ac:#33e0ff;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Noto Sans CJK SC",sans-serif;padding:24px}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px} .sub{color:var(--mut);margin:0 0 20px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px;margin-bottom:16px}
+  label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+  input,textarea,select{width:100%;background:#0e1117;border:1px solid var(--bd);color:var(--fg);border-radius:8px;padding:9px 11px;font:inherit}
+  textarea{min-height:160px;resize:vertical;font-size:13px}
+  input[type=range]{padding:0}
+  input[type=color]{height:38px;padding:2px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 16px}
+  .row{display:flex;align-items:center;gap:10px}
+  .row .v{color:var(--ac);font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+  .go{width:100%;margin-top:16px;background:var(--ac);color:#04222b;border:0;border-radius:10px;padding:13px;font-size:16px;font-weight:700;cursor:pointer}
+  .go:disabled{opacity:.5;cursor:not-allowed}
+  #prog{display:none;margin-top:8px;color:var(--mut)}
+  #result{display:none}
+  video{width:100%;border-radius:12px;background:#000;margin-top:8px}
+  .dl{display:inline-block;margin-top:10px;background:var(--ac);color:#04222b;text-decoration:none;padding:9px 16px;border-radius:8px;font-weight:700}
+  .hint{font-size:12px;color:var(--mut);margin-top:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p style="margin:0 0 10px"><a href="/" style="color:var(--mut);text-decoration:none;font-size:13px">← 返回首页(字幕 / MTV)</a></p>
+  <h1>🎤 卡拉OK字幕(逐字强制对齐)</h1>
+  <p class="sub">传成片 mp4 + 歌词原文 → 用歌词逐字对齐到唱声、烧录卡拉OK字幕。歌词里的 <code>[段落标记]</code> 和 <code>(舞台说明)</code> 会自动忽略。</p>
+
+  <div class="card">
+    <label style="margin-top:0">对齐方式</label>
+    <select id="mode">
+      <option value="force">强制对齐（本地·中文准/英文实验）</option>
+      <option value="suno">Suno 强化对齐（逐词·中英都准·推荐）</option>
+    </select>
+    <div id="sunoBox" style="display:none;margin-top:8px">
+      <label>Suno 歌名 或 song_id</label>
+      <input type="text" id="song" placeholder="例如 Still That Boy   或   c3df932b-d63d-...">
+      <div style="font-size:12px;color:#888;margin-top:4px">按歌名在你 Suno 曲库里匹配,自动取它的逐词对齐(完美)。需 suno-api(:3000)在跑。</div>
+    </div>
+    <label>① 成片视频(mp4)</label>
+    <input type="file" id="video" accept="video/*">
+    <label id="lyricsLabel">② 歌词原文(每行一句;可带 [Verse]/(男) 等标注,程序自动剔除)</label>
+    <textarea id="lyrics" placeholder="漫长沉默之后&#10;窗外终于亮起一道新的光&#10;..."></textarea>
+  </div>
+
+  <div class="card">
+    <label style="margin-top:0">③ 样式调整</label>
+    <div class="grid">
+      <div>
+        <label>语言</label>
+        <select id="lang"><option value="zh">中文</option><option value="en">English(实验)</option></select>
+      </div>
+      <div>
+        <label>字幕高度(离底像素,越小越靠下)</label>
+        <div class="row"><input type="range" id="margin_v" min="10" max="320" value="50"><span class="v" id="margin_v_v">50</span></div>
+      </div>
+      <div>
+        <label>字号</label>
+        <div class="row"><input type="range" id="font_size" min="24" max="100" value="54"><span class="v" id="font_size_v">54</span></div>
+      </div>
+      <div>
+        <label>描边粗细</label>
+        <div class="row"><input type="range" id="outline" min="0" max="8" step="0.5" value="3"><span class="v" id="outline_v">3</span></div>
+      </div>
+      <div>
+        <label>已唱颜色(扫过)</label>
+        <input type="color" id="primary" value="#33e0ff">
+      </div>
+      <div>
+        <label>未唱颜色</label>
+        <input type="color" id="secondary" value="#ffffff">
+      </div>
+      <div>
+        <label>提前出现(秒)</label>
+        <div class="row"><input type="range" id="lead_in" min="0" max="2" step="0.1" value="0.7"><span class="v" id="lead_in_v">0.7</span></div>
+      </div>
+      <div>
+        <label>延后停留(秒)</label>
+        <div class="row"><input type="range" id="linger" min="0.5" max="3" step="0.1" value="1.5"><span class="v" id="linger_v">1.5</span></div>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--bd);margin-top:14px;padding-top:12px">
+      <label style="margin-top:0">④ 开头标题卡（歌名 / 词曲作者，留空＝不加）</label>
+      <input type="text" id="songTitle" placeholder="歌名（第一行，居中）" style="margin-bottom:6px">
+      <input type="text" id="songCredits" placeholder="词曲作者（第二行，如：词/曲 周传哲）">
+      <div class="grid" style="margin-top:8px">
+        <div><label>字体</label><select id="tcFont"><option value="serif">衬线（标题感）</option><option value="sans">黑体</option></select></div>
+        <div><label>歌名字号</label><div class="row"><input type="range" id="tcSize" min="28" max="72" value="50"><span class="v" id="tcSize_v">50</span></div></div>
+        <div><label>字色</label><input type="color" id="tcColor" value="#ffffff"></div>
+        <div><label>垂直位置（离顶%）</label><div class="row"><input type="range" id="tcYpos" min="10" max="70" value="36"><span class="v" id="tcYpos_v">36</span></div></div>
+        <div><label>显示时长（秒）</label><div class="row"><input type="range" id="tcDur" min="6" max="14" value="10"><span class="v" id="tcDur_v">10</span></div></div>
+      </div>
+      <div class="hint">淡入≈1.5s 浮现 → 保持 → 结束前淡出，落在前奏里、第一句歌词前消失。</div>
+    </div>
+
+    <button class="go" id="go">🎬 生成卡拉OK字幕</button>
+    <div id="prog">⏳ <span id="progmsg">处理中…</span></div>
+  </div>
+
+  <div class="card" id="result">
+    <label style="margin-top:0">成片预览</label>
+    <video id="rv" controls></video>
+    <div><a class="dl" id="dl" download>⬇ 下载</a> <button class="go" style="width:auto;display:inline-block;margin-left:8px;padding:9px 16px;font-size:14px" id="redo">↺ 调参数重做(不用重传)</button></div>
+    <div class="hint">字幕太高/太低?拖「字幕高度」滑块,点「调参数重做」即可,几秒-1分钟出新版。</div>
+  </div>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  ['margin_v','font_size','outline','lead_in','linger','tcSize','tcYpos','tcDur'].forEach(k=>{
+    const el=$(k), v=$(k+'_v'); if(el&&v) el.addEventListener('input',()=>v.textContent=el.value);
+  });
+  let curVideoFile = null;
+  $('video').addEventListener('change', e => { curVideoFile = e.target.files[0] || null; });
+
+  $('mode').addEventListener('change', ()=>{
+    const suno=$('mode').value==='suno';
+    $('sunoBox').style.display = suno?'block':'none';
+    $('lyricsLabel').textContent = suno
+      ? '② 中英双语译文（可选;每行英文 + 下一行中文 → 做第二行翻译;留空=只英文逐词）'
+      : '② 歌词原文(每行一句;可带 [Verse]/(男) 等标注,程序自动剔除)';
+  });
+
+  function params(){
+    return {mode:$('mode').value, song:$('song').value.trim(),
+      lang:$('lang').value, margin_v:$('margin_v').value, font_size:$('font_size').value,
+      outline:$('outline').value, primary:$('primary').value, secondary:$('secondary').value,
+      lead_in:$('lead_in').value, linger:$('linger').value,
+      song_title:$('songTitle').value.trim(), song_credits:$('songCredits').value.trim(),
+      tc_font:$('tcFont').value, tc_size:$('tcSize').value, tc_color:$('tcColor').value,
+      tc_ypos:$('tcYpos').value, tc_dur:$('tcDur').value};
+  }
+
+  async function run(){
+    if(!curVideoFile){ alert('请先选视频'); return; }
+    const suno=$('mode').value==='suno';
+    if(suno && !$('song').value.trim()){ alert('Suno 模式请填歌名或 song_id'); return; }
+    if(!suno && !$('lyrics').value.trim()){ alert('请粘贴歌词'); return; }
+    $('go').disabled=true; $('prog').style.display='block'; $('result').style.display='none';
+    $('progmsg').textContent='上传 + 启动…';
+    const fd=new FormData();
+    fd.append('video', curVideoFile); fd.append('lyrics', $('lyrics').value);
+    const pp=params(); for(const k in pp) fd.append(k, pp[k]);
+    let r=await fetch('/api/karaoke/start',{method:'POST',body:fd});
+    let d=await r.json();
+    if(d.error){ alert(d.error); $('go').disabled=false; $('prog').style.display='none'; return; }
+    const id=d.task_id;
+    const poll=setInterval(async()=>{
+      const s=await (await fetch('/api/karaoke/status/'+id)).json();
+      $('progmsg').textContent=s.message||s.status;
+      if(s.status==='done'){ clearInterval(poll); $('go').disabled=false; $('prog').style.display='none';
+        $('rv').src='/api/karaoke/download/'+id+'?t='+Date.now();
+        $('dl').href='/api/karaoke/download/'+id+'?download=1';
+        $('result').style.display='block'; $('result').scrollIntoView({behavior:'smooth'}); }
+      else if(s.status==='error'){ clearInterval(poll); $('go').disabled=false; $('prog').style.display='none'; alert('失败:'+s.message); }
+    },2000);
+  }
+  $('go').addEventListener('click', run);
+  $('redo').addEventListener('click', run);
+</script>
+</body>
+</html>

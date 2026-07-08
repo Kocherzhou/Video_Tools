@@ -1,0 +1,78 @@
+# ── Secrets & environment ──────────────────────────────────────
+.env
+.env.local
+.env.*.local
+gemini_keys.txt
+*_keys.txt
+
+# ── Heavy user data / job artifacts ────────────────────────────
+uploads/
+asset/
+backup/
+
+# ── Whisper / model caches ─────────────────────────────────────
+models/
+*.ckpt
+*.pt
+*.safetensors
+
+# ── whisper.cpp runtime (ARM64 backend): prebuilt binaries + ggml model ──
+# Platform-specific binaries and the 141MB model are provisioned locally,
+# not committed. See PROJECT_STATUS / .env for WHISPERCPP_BIN / WHISPERCPP_MODEL.
+whispercpp/
+
+# ── Python ─────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Backups & one-shot snapshots ───────────────────────────────
+*.bak
+*.bak.*
+*.orig
+
+# ── Test media (large binaries that snuck in) ──────────────────
+test_*.mp3
+test_*.wav
+test_*.mp4
+test_*.mov
+
+# ── Logs ───────────────────────────────────────────────────────
+*.log
+nohup.out
+
+# ── Editor / IDE ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Claude Code project-local state ────────────────────────────
+.claude/
+
+# ── OS metadata ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Build / dist ───────────────────────────────────────────────
+dist/
+build/
+*.egg
+
+# 原创歌词(测试输入,不入库)
+lyrics_*.txt
+kara_*
+
+# ── Windows 侧诱饵目录残留(非业务文件)────────────────────────
+CLAUDE-FABLE-5.md

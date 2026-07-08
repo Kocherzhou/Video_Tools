@@ -1,0 +1,5 @@
+flask>=3.0.0
+google-genai>=1.0.0
+httpx>=0.27.0
+pdf2image>=1.16.0
+zhconv>=1.4.3        # 繁→简转换（纯 Python，中文原文模式用）

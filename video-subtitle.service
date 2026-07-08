@@ -1,0 +1,14 @@
+[Unit]
+Description=视频字幕生成器 (video-subtitle Flask, 监听 28500, 公网 :18443)
+After=network.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/home/user/video-subtitle
+ExecStart=/bin/bash /home/user/video-subtitle/start.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
